@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AppSettings } from '../api'
 import { usePreferences } from '../preferences'
+import VoiceInputButton from './VoiceInputButton'
 
 type Props = {
   settings: AppSettings | null
@@ -326,6 +327,15 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                 >
                   ⚙
                 </button>
+                <VoiceInputButton
+                  value={task}
+                  onChange={(next) => {
+                    setErr('')
+                    setTask(next)
+                  }}
+                  disabled={busy}
+                  onError={setErr}
+                />
 
                 <button
                   type="button"

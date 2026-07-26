@@ -19,6 +19,38 @@ logger = logging.getLogger(__name__)
 # Live agents keyed by session_id
 _live: dict[str, Any] = {}
 
+_SKIP_FILE_PARTS = frozenset(
+    {"browseruse_agent_data", ".git", "__pycache__", "node_modules", ".DS_Store"}
+)
+
+
+def _collect_available_file_paths(*roots: Path) -> list[str]:
+    """Concrete absolute file paths for browser-use upload_file (exact-match whitelist)."""
+    paths: list[str] = []
+    seen: set[str] = set()
+    for root in roots:
+        if not root or not root.exists():
+            continue
+        try:
+            root = root.resolve()
+        except OSError:
+            continue
+        for p in root.rglob("*"):
+            try:
+                if not p.is_file():
+                    continue
+                if any(part in _SKIP_FILE_PARTS for part in p.parts):
+                    continue
+                if p.name in _SKIP_FILE_PARTS:
+                    continue
+                abs_path = str(p.resolve())
+            except OSError:
+                continue
+            if abs_path not in seen:
+                seen.add(abs_path)
+                paths.append(abs_path)
+    return paths
+
 
 def get_live_agent(session_id: str):
     return _live.get(session_id)
@@ -359,7 +391,7 @@ async def _preview_loop(session_id: str, agent: Any, screenshots: Path, stop: as
 
 
 async def run_session(session_id: str, task: str) -> None:
-    from .chat_gate import general_chat_reply, needs_browser
+    from .chat_gate import general_chat_reply
     from .queue import clear_cancelled, is_cancelled
     from .response_style import merge_extend_system_message
     from .task_url import apply_urls
@@ -378,9 +410,8 @@ async def run_session(session_id: str, task: str) -> None:
     max_steps = int(opts["max_steps"]) if opts.get("max_steps") is not None else 500
     extend_system = opts.get("extend_system_message")
     use_schedular = bool(opts.get("use_schedular"))
-    file_paths = [str(workspace)]
-    if use_schedular:
-        file_paths.insert(0, str(schedular_dir()))
+    roots = [schedular_dir(), workspace] if use_schedular else [workspace]
+    file_paths = _collect_available_file_paths(*roots)
 
     extend_system = merge_extend_system_message(
         str(extend_system) if extend_system else None
@@ -389,21 +420,54 @@ async def run_session(session_id: str, task: str) -> None:
     app_url = str(cfg.get("application_url") or "") or None
     runtime_url = opts.get("runtime_url")
 
-    # Greetings / Jira·Confluence log — never inject Application URL or launch a browser.
-    if not needs_browser(task):
+    # Greetings / local attached-file analysis / Jira·Confluence — never launch a browser.
+    from .chat_gate import browser_decision, is_local_attachment_task
+
+    want_browser, browser_reason = browser_decision(task)
+    if not want_browser:
+        from .attachment_chat import answer_from_attachments
         from .integration_actions import try_integration_from_chat
 
         model_name = cfg.get("llm_model") or "default"
         await db.update_session(session_id, status="running", model=str(model_name), error=None)
-        await _emit(session_id, "status", {"status": "running", "message": "Chat reply (no browser)"})
-        reply = await try_integration_from_chat(session_id, task)
-        if reply is None:
-            reply = general_chat_reply(task, application_url=app_url)
+
+        reply: str | None = None
+        if is_local_attachment_task(task):
+            await _emit(
+                session_id,
+                "status",
+                {"status": "thinking", "message": f"No browser ({browser_reason}) — reading attached files"},
+            )
+            reply = await answer_from_attachments(task=task, workspace=workspace, cfg=cfg)
+            if reply is None:
+                reply = (
+                    "Failed. I couldn't read the attached file(s) from the session workspace. "
+                    "Re-attach the file and try again."
+                )
+        else:
+            await _emit(
+                session_id,
+                "status",
+                {"status": "running", "message": f"No browser ({browser_reason})"},
+            )
+            reply = await try_integration_from_chat(session_id, task)
+            if reply is None:
+                reply = general_chat_reply(task, application_url=app_url)
+
         await db.add_message(session_id, "assistant", reply)
         await _emit(session_id, "message", {"role": "assistant", "content": reply})
         await db.update_session(session_id, status="completed", step_count=0)
         await _emit(session_id, "status", {"status": "completed"})
-        await _emit(session_id, "done", {"steps": 0, "chat_only": True})
+        await _emit(
+            session_id,
+            "done",
+            {
+                "steps": 0,
+                "chat_only": True,
+                "attachments_only": is_local_attachment_task(task),
+                "browser_reason": browser_reason,
+            },
+        )
         return
 
     # Real ask → URL in the task wins; else Runtime / Application URL.
@@ -426,22 +490,33 @@ async def run_session(session_id: str, task: str) -> None:
     )
     if continuation and start_url:
         task_dest = start_url
+
+    url_label = "none"
     if start_url:
-        await db.update_session(session_id, task=task, current_url=start_url)
         if continuation:
-            label = "session"
+            url_label = "session"
         elif extract_task_url(original_task):
-            label = "task"
-        elif runtime_url:
-            label = "runtime"
+            url_label = "task"
+        elif runtime_url and not continuation:
+            url_label = "runtime"
         else:
-            label = "application"
+            url_label = "application"
+        await db.update_session(session_id, task=task, current_url=start_url)
         await _emit(
             session_id,
             "status",
             {
                 "status": "running",
-                "message": f"Starting at {start_url} ({label} URL)",
+                "message": f"Browser on ({browser_reason}) · start URL from {url_label}: {start_url}",
+            },
+        )
+    else:
+        await _emit(
+            session_id,
+            "status",
+            {
+                "status": "running",
+                "message": f"Browser on ({browser_reason}) · no start URL (task did not name one; set Application URL in Settings if needed)",
             },
         )
 
@@ -484,6 +559,17 @@ async def run_session(session_id: str, task: str) -> None:
                             written.append(rel)
                     except Exception:
                         pass
+
+        # Keep upload_file whitelist in sync (attachments + agent-written files)
+        agent = _live.get(session_id)
+        if agent is not None:
+            try:
+                refreshed = _collect_available_file_paths(*roots)
+                existing = list(getattr(agent, "available_file_paths", None) or [])
+                merged = list(dict.fromkeys([*existing, *refreshed]))
+                agent.available_file_paths = merged
+            except Exception:
+                pass
 
         await db.update_session(session_id, step_count=step, current_url=url)
         payload: dict[str, Any] = {
@@ -710,7 +796,7 @@ async def control_agent(session_id: str, action: str) -> bool:
 
 async def follow_up(session_id: str, content: str) -> None:
     """Add follow-up task to a live agent, or enqueue a new run if idle."""
-    from .chat_gate import general_chat_reply, needs_browser
+    from .chat_gate import browser_decision, general_chat_reply, is_local_attachment_task
 
     agent = _live.get(session_id)
     await db.add_message(session_id, "user", content)
@@ -721,18 +807,43 @@ async def follow_up(session_id: str, content: str) -> None:
     cfg = await effective_settings()
     app_url = str(cfg.get("application_url") or "") or None
 
-    # Chat-only follow-ups — greet / log to Jira·Confluence; never open the browser.
-    if not needs_browser(content):
+    # Chat-only follow-ups — greet / local files / log to Jira·Confluence; never open the browser.
+    want_browser, browser_reason = browser_decision(content)
+    if not want_browser:
+        from .attachment_chat import answer_from_attachments
         from .integration_actions import try_integration_from_chat
 
-        reply = await try_integration_from_chat(session_id, content)
-        if reply is None:
-            reply = general_chat_reply(content, application_url=app_url)
+        reply: str | None = None
+        if is_local_attachment_task(content):
+            await _emit(
+                session_id,
+                "status",
+                {"status": "thinking", "message": f"No browser ({browser_reason}) — reading attached files"},
+            )
+            reply = await answer_from_attachments(
+                task=content,
+                workspace=session_dir(session_id) / "workspace",
+                cfg=cfg,
+            )
+            if reply is None:
+                reply = (
+                    "Failed. I couldn't read the attached file(s) from the session workspace. "
+                    "Re-attach the file and try again."
+                )
+        else:
+            await _emit(
+                session_id,
+                "status",
+                {"status": "running", "message": f"No browser ({browser_reason})"},
+            )
+            reply = await try_integration_from_chat(session_id, content)
+            if reply is None:
+                reply = general_chat_reply(content, application_url=app_url)
         await db.add_message(session_id, "assistant", reply)
         await _emit(session_id, "message", {"role": "assistant", "content": reply})
         await db.update_session(session_id, status="completed")
-        await _emit(session_id, "status", {"status": "completed", "message": "Chat reply (no browser)"})
-        await _emit(session_id, "done", {"steps": 0, "chat_only": True})
+        await _emit(session_id, "status", {"status": "completed", "message": f"Chat reply ({browser_reason})"})
+        await _emit(session_id, "done", {"steps": 0, "chat_only": True, "browser_reason": browser_reason})
         return
 
     sess = await db.get_session(session_id)

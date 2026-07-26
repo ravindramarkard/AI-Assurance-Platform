@@ -1,11 +1,183 @@
 /** Client-side copy / HTML / PDF export for assistant messages. */
 
+export type ReportStep = {
+  step: number
+  url?: string
+  pageTitle?: string
+  thought?: string
+  actions: string[]
+  details: string[]
+  screenshotPath?: string
+  /** data:image/... for offline HTML / print PDF */
+  screenshotDataUrl?: string
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function truncate(s: string, n: number): string {
+  const t = (s || '').replace(/\s+/g, ' ').trim()
+  if (t.length <= n) return t
+  return `${t.slice(0, n - 1)}…`
+}
+
+function humanizeAction(action: string): string {
+  const raw = (action || '').trim()
+  if (!raw) return 'Action'
+  const i = raw.indexOf(':')
+  const name = (i >= 0 ? raw.slice(0, i) : raw).trim()
+  const rest = i >= 0 ? raw.slice(i + 1).trim() : ''
+  const label = name.replace(/_/g, ' ')
+  if (!rest) return label.charAt(0).toUpperCase() + label.slice(1)
+  return `${label.charAt(0).toUpperCase() + label.slice(1)} — ${truncate(rest, 120)}`
+}
+
+function thoughtSummary(payload: Record<string, unknown>): string {
+  const fields = (payload.thought_fields || {}) as Record<string, unknown>
+  for (const key of ['thinking', 'next_goal', 'memory', 'evaluation_previous_goal', 'page_summary']) {
+    const v = fields[key]
+    if (typeof v === 'string' && v.trim()) return truncate(v, 400)
+  }
+  const thought = payload.thought
+  if (typeof thought === 'string' && thought.trim()) {
+    const first = thought.split(/\n\n/)[0] || thought
+    return truncate(first.replace(/^[a-z_]+:\s*/i, ''), 400)
+  }
+  return ''
+}
+
+type StepEventLike = {
+  type: string
+  payload: Record<string, unknown>
+  created_at?: string
+}
+
+/** Build report steps from session events (screenshots resolved separately). */
+export function eventsToReportSteps(events: StepEventLike[], limit = 50): ReportStep[] {
+  const steps = (events || []).filter((e) => e.type === 'step')
+  const out: ReportStep[] = []
+  for (let i = 0; i < steps.length && out.length < limit; i++) {
+    const e = steps[i]
+    const p = e.payload || {}
+    const stepNo = typeof p.step === 'number' ? p.step : i + 1
+    const actions = Array.isArray(p.actions)
+      ? (p.actions as unknown[]).map((a) => String(a)).filter(Boolean)
+      : []
+    const details: string[] = []
+    if (p.url) details.push(`URL: ${String(p.url)}`)
+    if (p.title) details.push(`Page: ${String(p.title)}`)
+    if (Array.isArray(p.files_written) && p.files_written.length) {
+      details.push(`Files: ${(p.files_written as unknown[]).map(String).join(', ')}`)
+    }
+    if (e.created_at) {
+      try {
+        details.push(`Time: ${new Date(String(e.created_at)).toLocaleString()}`)
+      } catch {
+        /* ignore */
+      }
+    }
+    const shot =
+      typeof p.screenshot === 'string' && p.screenshot ? String(p.screenshot) : undefined
+    let screenshotDataUrl: string | undefined
+    if (typeof p.screenshot_b64 === 'string' && p.screenshot_b64) {
+      screenshotDataUrl = `data:image/png;base64,${p.screenshot_b64}`
+    }
+    out.push({
+      step: stepNo,
+      url: p.url ? String(p.url) : undefined,
+      pageTitle: p.title ? String(p.title) : undefined,
+      thought: thoughtSummary(p) || undefined,
+      actions: actions.map(humanizeAction),
+      details,
+      screenshotPath: shot,
+      screenshotDataUrl,
+    })
+  }
+  return out
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('read failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+/** Fetch missing screenshots and embed as data URLs for offline HTML/PDF. */
+export async function embedStepScreenshots(
+  sessionId: string,
+  steps: ReportStep[],
+  screenshotUrl: (sessionId: string, rel: string) => string,
+): Promise<ReportStep[]> {
+  const results: ReportStep[] = []
+  for (const step of steps) {
+    if (step.screenshotDataUrl || !step.screenshotPath) {
+      results.push(step)
+      continue
+    }
+    try {
+      const res = await fetch(screenshotUrl(sessionId, step.screenshotPath))
+      if (!res.ok) {
+        results.push(step)
+        continue
+      }
+      const blob = await res.blob()
+      const dataUrl = await blobToDataUrl(blob)
+      results.push({ ...step, screenshotDataUrl: dataUrl })
+    } catch {
+      results.push(step)
+    }
+  }
+  return results
+}
+
+function stepsToHtml(steps: ReportStep[]): string {
+  if (!steps.length) return ''
+  const cards = steps
+    .map((s) => {
+      const actions =
+        s.actions.length > 0
+          ? `<ol class="step-actions">${s.actions.map((a) => `<li>${escapeHtml(a)}</li>`).join('')}</ol>`
+          : `<p class="muted">No tool actions this step.</p>`
+      const details =
+        s.details.length > 0
+          ? `<ul class="step-details">${s.details.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul>`
+          : ''
+      const thought = s.thought
+        ? `<div class="step-thought"><strong>Thought</strong><p>${escapeHtml(s.thought)}</p></div>`
+        : ''
+      const shot = s.screenshotDataUrl
+        ? `<figure class="step-shot">
+            <img src="${s.screenshotDataUrl}" alt="Step ${s.step} screenshot" />
+            <figcaption>Step ${s.step} screenshot${s.pageTitle ? ` — ${escapeHtml(truncate(s.pageTitle, 80))}` : ''}${s.url ? ` · ${escapeHtml(truncate(s.url, 60))}` : ''}</figcaption>
+          </figure>`
+        : `<p class="muted">No screenshot captured for this step.</p>`
+      return `<article class="step-card" id="step-${s.step}">
+        <header class="step-head">
+          <span class="step-badge">Step ${s.step}</span>
+          ${s.url ? `<span class="step-url">${escapeHtml(truncate(s.url, 90))}</span>` : ''}
+        </header>
+        ${thought}
+        <div class="step-block"><strong>Actions</strong>${actions}</div>
+        ${details ? `<div class="step-block"><strong>Details</strong>${details}</div>` : ''}
+        <div class="step-block"><strong>Screenshot</strong>${shot}</div>
+      </article>`
+    })
+    .join('\n')
+
+  return `
+  <section class="steps-section">
+    <h2>Detailed steps</h2>
+    <p class="steps-intro">${steps.length} agent step${steps.length === 1 ? '' : 's'} with actions, details, and screenshots.</p>
+    ${cards}
+  </section>`
 }
 
 /** Light markdown → HTML for exports (bold, links, lists, pipes tables). */
@@ -29,7 +201,6 @@ export function contentToHtmlBody(content: string): string {
 
   while (i < lines.length) {
     const line = lines[i]
-    // markdown table
     if (/^\s*\|.+\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-/.test(lines[i + 1])) {
       const rows: string[][] = []
       while (i < lines.length && /^\s*\|/.test(lines[i])) {
@@ -104,9 +275,6 @@ export function contentToHtmlBody(content: string): string {
       continue
     }
 
-    // Collect a paragraph. Must always advance `i` — lines that look like list/table
-    // markers but failed the stricter parsers above used to stall here forever
-    // (RangeError: Invalid array length from unbounded parts.push).
     const start = i
     const para: string[] = []
     while (
@@ -131,10 +299,9 @@ export function contentToHtmlBody(content: string): string {
 export type ReportMeta = {
   title?: string
   username?: string
-  /** User prompt that requested this report / answer */
   prompt?: string
-  /** ISO or display timestamp; defaults to now */
   timestamp?: string
+  steps?: ReportStep[]
 }
 
 export function buildHtmlDocument(
@@ -148,7 +315,7 @@ export function buildHtmlDocument(
   const prompt = (meta.prompt || '').trim() || '—'
   const timestamp = (meta.timestamp || new Date().toLocaleString()).trim()
   const body = contentToHtmlBody(content)
-  // Inline SVG — works offline in HTML download and print-to-PDF
+  const stepsHtml = stepsToHtml(meta.steps || [])
   const brandIcon = `<svg class="ab-icon" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
       <rect x="2" y="4" width="28" height="22" rx="4" fill="#FF7A1A"/>
       <rect x="6" y="8" width="20" height="12" rx="2" fill="#FFF7ED"/>
@@ -168,13 +335,14 @@ export function buildHtmlDocument(
     body {
       font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
       line-height: 1.55;
-      max-width: 800px;
+      max-width: 860px;
       margin: 0 auto;
       padding: 28px 24px 64px;
       color: #1f2937;
       background: #fff;
     }
     h1 { font-size: 1.35rem; margin: 0 0 0.75rem; color: #111827; }
+    h2 { font-size: 1.15rem; margin: 1.75rem 0 0.5rem; color: #111827; border-bottom: 2px solid #fed7aa; padding-bottom: 0.35rem; }
     p { margin: 0 0 0.85rem; }
     ol, ul { margin: 0 0 1rem; padding-left: 1.35rem; }
     li { margin: 0.35rem 0; }
@@ -183,6 +351,7 @@ export function buildHtmlDocument(
     .report-body th { background: #f3f4f6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 4px; }
     a { color: #2563eb; }
+    .muted { color: #6b7280; font-size: 0.9rem; }
     .ab-icon { width: 28px; height: 28px; display: block; flex-shrink: 0; }
     .ab-icon-sm { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; }
     .report-header {
@@ -202,34 +371,14 @@ export function buildHtmlDocument(
     }
     .report-brand .brand-text { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.01em; }
     .report-brand .brand-sub { font-size: 0.75rem; opacity: 0.9; font-weight: 500; }
-    .meta-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 0;
-      font-size: 0.9rem;
-      background: #fff;
-    }
-    .meta-table th,
-    .meta-table td {
-      border: none;
-      border-top: 1px solid #fed7aa;
-      padding: 10px 12px;
-      text-align: left;
-      vertical-align: top;
+    .meta-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 0.9rem; background: #fff; }
+    .meta-table th, .meta-table td {
+      border: none; border-top: 1px solid #fed7aa; padding: 10px 12px; text-align: left; vertical-align: top;
     }
     .meta-table th {
-      width: 118px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      white-space: nowrap;
+      width: 118px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
     }
-    .meta-table td {
-      color: #111827;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
+    .meta-table td { color: #111827; white-space: pre-wrap; word-break: break-word; }
     .meta-table tr.row-title th { background: #fff7ed; color: #c2410c; }
     .meta-table tr.row-title td { background: #fffbeb; font-weight: 600; font-size: 0.98rem; }
     .meta-table tr.row-user th { background: #eff6ff; color: #1d4ed8; }
@@ -238,40 +387,52 @@ export function buildHtmlDocument(
     .meta-table tr.row-prompt td { background: #f8fafc; }
     .meta-table tr.row-time th { background: #f1f5f9; color: #334155; }
     .meta-table tr.row-time td { background: #fafafa; color: #374151; }
-    .chip {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 0.82rem;
-      font-weight: 600;
-    }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
     .chip-user { background: #dbeafe; color: #1e40af; }
     .chip-time { background: #e2e8f0; color: #334155; }
+    .steps-section { margin-top: 1.5rem; }
+    .steps-intro { color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem; }
+    .step-card {
+      border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin: 0 0 1.1rem;
+      background: #fafafa; break-inside: avoid; page-break-inside: avoid;
+    }
+    .step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 0.75rem; }
+    .step-badge {
+      display: inline-block; background: #FF7A1A; color: #fff; font-size: 0.75rem; font-weight: 700;
+      padding: 3px 10px; border-radius: 999px; letter-spacing: 0.02em;
+    }
+    .step-url { font-size: 0.8rem; color: #4b5563; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+    .step-block { margin: 0.65rem 0; }
+    .step-block > strong {
+      display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.35rem;
+    }
+    .step-actions, .step-details { margin: 0.25rem 0 0; padding-left: 1.2rem; font-size: 0.92rem; }
+    .step-thought {
+      background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 0.5rem 0 0.75rem;
+    }
+    .step-thought strong { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #c2410c; }
+    .step-thought p { margin: 0.35rem 0 0; font-size: 0.92rem; color: #374151; }
+    .step-shot { margin: 0.5rem 0 0; }
+    .step-shot img {
+      display: block; width: 100%; max-height: 420px; object-fit: contain; background: #111827;
+      border: 1px solid #d1d5db; border-radius: 8px;
+    }
+    .step-shot figcaption { margin-top: 0.4rem; font-size: 0.78rem; color: #6b7280; }
     .report-footer {
-      margin-top: 2.5rem;
-      padding-top: 0.85rem;
-      border-top: 1px solid #fed7aa;
-      text-align: center;
-      color: #9a3412;
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      margin-top: 2.5rem; padding-top: 0.85rem; border-top: 1px solid #fed7aa; text-align: center;
+      color: #9a3412; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em;
     }
     .report-footer .ab-icon { display: inline-block; }
     @media print {
-      @page { margin: 16mm 14mm 18mm; }
+      @page { margin: 14mm 12mm 16mm; }
       body { padding: 0 0 28px; max-width: none; }
       a { color: inherit; text-decoration: none; }
       .report-header { break-inside: avoid; box-shadow: none; }
+      .step-card { break-inside: avoid; page-break-inside: avoid; background: #fff; }
+      .step-shot img { max-height: 340px; }
       .report-footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        margin: 0;
-        padding: 6px 0 0;
-        border-top: 1px solid #fdba74;
-        background: #fff;
+        position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 6px 0 0;
+        border-top: 1px solid #fdba74; background: #fff;
       }
     }
   </style>
@@ -307,7 +468,9 @@ export function buildHtmlDocument(
     </table>
   </header>
   <main class="report-body">
+  <h2>Summary</h2>
   ${body}
+  ${stepsHtml}
   </main>
   <footer class="report-footer">
     ${brandIcon.replace('class="ab-icon"', 'class="ab-icon ab-icon-sm"')}
@@ -370,8 +533,7 @@ export function downloadHtml(content: string, titleOrMeta: string | ReportMeta) 
 
 /**
  * Open the system print dialog (user can choose "Save as PDF").
- * Uses a hidden iframe — `window.open(..., 'noopener')` returns null in Chrome
- * and popup blockers often block blank windows, so that path never reached print.
+ * Waits for embedded screenshots to load before printing.
  */
 export function printAsPdf(content: string, titleOrMeta: string | ReportMeta): boolean {
   const html = buildHtmlDocument(content, titleOrMeta)
@@ -417,7 +579,10 @@ export function printAsPdf(content: string, titleOrMeta: string | ReportMeta): b
     return false
   }
 
+  let printed = false
   const doPrint = () => {
+    if (printed) return
+    printed = true
     try {
       win.focus()
       win.print()
@@ -426,13 +591,28 @@ export function printAsPdf(content: string, titleOrMeta: string | ReportMeta): b
       downloadHtml(content, titleOrMeta)
       return
     }
-    // Remove iframe after print UI closes (or shortly if afterprint never fires)
     win.addEventListener('afterprint', cleanup, { once: true })
     setTimeout(cleanup, 60_000)
   }
 
-  // document.write content is usually ready immediately; small delay for layout/CSS
-  setTimeout(doPrint, 100)
+  const imgs = Array.from(doc.images || [])
+  if (imgs.length === 0) {
+    setTimeout(doPrint, 100)
+    return true
+  }
+  let pending = imgs.length
+  const maybePrint = () => {
+    pending -= 1
+    if (pending <= 0) setTimeout(doPrint, 80)
+  }
+  for (const img of imgs) {
+    if (img.complete) maybePrint()
+    else {
+      img.addEventListener('load', maybePrint, { once: true })
+      img.addEventListener('error', maybePrint, { once: true })
+    }
+  }
+  setTimeout(doPrint, 8_000)
   return true
 }
 

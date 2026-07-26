@@ -5,22 +5,22 @@ from __future__ import annotations
 import re
 
 _ATTACH_RE = re.compile(
-    r"\[Attached files saved under the session workspace[^\]]*\]\s*",
+    r"\[Attached files[^\]]*\]\s*(?:\n-\s+.+\s*)*",
     re.IGNORECASE,
 )
 
+# Explicit web / UI work
 _BROWSER_HINTS = re.compile(
     r"("
     r"https?://|"
     r"\bwww\.|"
-    r"\bgo to\b|"
-    r"\bopen\b|"
+    r"\bgo\s+to\b|"
     r"\bnavigate\b|"
     r"\bvisit\b|"
     r"\bbrowse\b|"
     r"\bclick\b|"
-    r"\blog ?in\b|"
-    r"\bsign ?in\b|"
+    r"\blog\s?in\b|"
+    r"\bsign\s?in\b|"
     r"\bscrape\b|"
     r"\bscreenshot\b|"
     r"\bfill\b|"
@@ -28,22 +28,36 @@ _BROWSER_HINTS = re.compile(
     r"\bsubmit\b|"
     r"\bdownload\b|"
     r"\bupload\b|"
-    r"\btest case|"
+    r"\btest\s+case|"
     r"\bplaywright\b|"
     r"\bon the (page|site|website|form)\b|"
     r"\bthis (page|site|url|link)\b|"
-    r"\borangehrm\b"
+    r"\b(home\s*page|homepage)\b|"
+    r"\borangehrm\b|"
+    # "open" only when clearly about the web — not "open the CSV"
+    r"\bopen\s+(the\s+)?(page|site|website|url|tab|link|browser|homepage|home\s*page)\b|"
+    r"\bopen\s+(?:https?://|www\.)|"
+    r"\bopen\s+[\w.-]+\.[a-z]{2,}\b"
     r")",
     re.IGNORECASE,
 )
 
-# Concrete asks → launch browser (use Application / Runtime URL if needed).
+# Concrete asks that usually need the Application / Runtime URL
 _ACTION_HINTS = re.compile(
     r"("
     r"\b(get|show|fetch|load|find|search|look\s*up|run|perform|execute)\b|"
-    r"\bdo\s+(the|this|that|it|a|an|my|some)\b|"
-    r"\b(please\s+)?(check|read|list)\b"
+    r"\bdo\s+(the|this|that|it|a|an|my|some)\b"
     r")",
+    re.IGNORECASE,
+)
+
+_SOFT_ACTION = re.compile(
+    r"\b(please\s+)?(check|read|list)\b",
+    re.IGNORECASE,
+)
+
+_PAGE_CONTEXT = re.compile(
+    r"\b(page|site|website|form|url|browser|homepage|home\s*page|online|web)\b",
     re.IGNORECASE,
 )
 
@@ -81,8 +95,70 @@ _THANKS_OK = re.compile(
     re.IGNORECASE,
 )
 
+# Explicit web / UI work — not satisfied by reading attached files alone
+_WEB_ACTION = re.compile(
+    r"("
+    r"https?://|"
+    r"\bwww\.|"
+    r"\bgo\s+to\b|"
+    r"\bnavigate\b|"
+    r"\bvisit\b|"
+    r"\bbrowse\b|"
+    r"\bclick\b|"
+    r"\blog\s?in\b|"
+    r"\bsign\s?in\b|"
+    r"\bscrape\b|"
+    r"\bscreenshot\b|"
+    r"\bfill\b|"
+    r"\btype\b|"
+    r"\bsubmit\b|"
+    r"\bupload\b|"
+    r"\bdownload\b|"
+    r"\bplaywright\b|"
+    r"\bon the (page|site|website|form)\b|"
+    r"\bthis (page|site|url|link)\b|"
+    r"\bopen\s+(the\s+)?(page|site|website|url|tab|link|browser|homepage|home\s*page)\b|"
+    r"\bopen\s+(?:https?://|www\.)|"
+    r"\bopen\s+[\w.-]+\.[a-z]{2,}\b"
+    r")",
+    re.IGNORECASE,
+)
 
-def _normalize_task(task: str) -> str:
+_LOCAL_FILE_ASK = re.compile(
+    r"("
+    r"\bdescribe\b|"
+    r"\bsummar(y|ize|ise)\b|"
+    r"\banaly[sz]e\b|"
+    r"\bexplain\b|"
+    r"\binspect\b|"
+    r"\bpreview\b|"
+    r"\bread\b|"
+    r"\bcontents?\b|"
+    r"\bschema\b|"
+    r"\bcolumns?\b|"
+    r"\bheaders?\b|"
+    r"\bhow many (rows?|records?|lines?|entries?|columns?)\b|"
+    r"\bcount (the )?(rows?|records?|lines?|entries?)\b|"
+    r"\bwhat('s| is|are) (in|inside|this|the)\b|"
+    r"\battached\b|"
+    r"\bdocument(s)?\b|"
+    r"\bcsv\b|"
+    r"\bfile(s)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_LOCAL_FILE_TOKEN = re.compile(
+    r"\b(file|files|csv|document|documents|attachment|attachments|pdf|xlsx?|json)\b",
+    re.IGNORECASE,
+)
+
+
+def has_attached_files_marker(task: str) -> bool:
+    return bool(re.search(r"\[Attached files", task or "", re.IGNORECASE))
+
+
+def normalize_task(task: str) -> str:
     text = (task or "").strip()
     text = _ATTACH_RE.sub("", text).strip()
     text = re.sub(
@@ -94,65 +170,143 @@ def _normalize_task(task: str) -> str:
     return text
 
 
+# Back-compat alias
+_normalize_task = normalize_task
+
+
+def is_local_attachment_task(task: str) -> bool:
+    """
+    True when the user attached files and asked to describe/analyze them locally —
+    no browser / Application URL should be involved.
+    """
+    if not has_attached_files_marker(task):
+        return False
+    text = normalize_task(task)
+    if not text:
+        return False
+    if _WEB_ACTION.search(text):
+        return False
+    return bool(_LOCAL_FILE_ASK.search(text))
+
+
+def _task_names_url(text: str) -> bool:
+    from .task_url import extract_task_url
+
+    return extract_task_url(text) is not None
+
+
+def has_web_intent(task: str) -> bool:
+    """
+    True only when the ask clearly needs a browser.
+
+    URL priority (handled elsewhere): task URL → Runtime URL → Application URL.
+    """
+    if is_local_attachment_task(task):
+        return False
+
+    text = normalize_task(task)
+    if not text:
+        return False
+
+    if _task_names_url(text):
+        return True
+
+    if _BROWSER_HINTS.search(text) or _WEB_ACTION.search(text):
+        return True
+
+    if _RESEARCH_HINTS.search(text):
+        return True
+
+    if _ACTION_HINTS.search(text):
+        return True
+
+    # "read/check/list" → browser only with page/site context (not local files)
+    if _SOFT_ACTION.search(text):
+        if has_attached_files_marker(task) or _LOCAL_FILE_TOKEN.search(text):
+            if not _PAGE_CONTEXT.search(text):
+                return False
+        if _PAGE_CONTEXT.search(text) or _RESEARCH_HINTS.search(text) or _task_names_url(text):
+            return True
+        return False
+
+    return False
+
+
 def _has_real_ask(text: str) -> bool:
-    return bool(
-        _BROWSER_HINTS.search(text)
-        or _ACTION_HINTS.search(text)
-        or _RESEARCH_HINTS.search(text)
-    )
+    """Used for greeting follow-ons like 'hi, get the AED price'."""
+    return has_web_intent(text)
 
 
 def is_chat_only(task: str) -> bool:
-    """True for greetings / help — never launch a browser for these."""
-    text = _normalize_task(task)
+    """True for greetings / help / non-web chat — never launch a browser."""
+    text = normalize_task(task)
     if not text:
         return True
 
-    # Log to Jira / Confluence from chat — no browser
     from .integration_actions import is_integration_chat
 
     if is_integration_chat(text):
         return True
 
-    # "hi" or "hi." → chat only; "hi, get the AED price" → browser
+    if is_local_attachment_task(task):
+        return False  # handled as attachment path, not generic chat
+
     if _GREETING.match(text):
         after = _GREETING.sub("", text, count=1).strip(" .?!,-:")
         if not after:
             return True
-        return not _has_real_ask(after)
+        return not has_web_intent(after)
 
     if _THANKS_OK.match(text):
         return True
 
-    if _CAPABILITY.search(text) and not _has_real_ask(text):
+    if _CAPABILITY.search(text) and not has_web_intent(text):
         return True
 
-    if _has_real_ask(text):
+    if has_web_intent(text):
         return False
 
-    # Short filler with no action
-    if len(text) <= 24 and not re.search(r"[/.]", text):
-        if re.fullmatch(r"[\w\s?!.',-]+", text, flags=re.UNICODE):
-            return True
-
-    return False
-
-
-def needs_browser(task: str, *, start_url: str | None = None) -> bool:
-    """False for greetings. Default URL never forces a browser on its own."""
-    del start_url
-    if is_chat_only(task):
-        return False
+    # No clear web ask → stay in chat (do not open Application URL)
     return True
 
 
+def needs_browser(task: str, *, start_url: str | None = None) -> bool:
+    """
+    Open a browser only for clear web intent.
+    Default Application URL never forces a browser by itself.
+    """
+    del start_url
+    if is_local_attachment_task(task):
+        return False
+    if is_chat_only(task):
+        return False
+    return has_web_intent(task)
+
+
+def browser_decision(task: str) -> tuple[bool, str]:
+    """Return (needs_browser, short reason) for status / debugging."""
+    if is_local_attachment_task(task):
+        return False, "local attached files"
+    if is_chat_only(task):
+        return False, "chat only"
+    if has_web_intent(task):
+        if _task_names_url(normalize_task(task)):
+            return True, "task names a URL"
+        if _BROWSER_HINTS.search(normalize_task(task)) or _WEB_ACTION.search(normalize_task(task)):
+            return True, "web / UI action"
+        if _RESEARCH_HINTS.search(normalize_task(task)):
+            return True, "live / research ask"
+        return True, "browse action"
+    return False, "no web intent"
+
+
 def general_chat_reply(task: str, *, application_url: str | None = None) -> str:
-    text = _normalize_task(task).lower()
+    text = normalize_task(task).lower()
     app = (application_url or "").strip()
     url_bit = f" ({app})" if app else ""
     can_load = (
-        f"I can load the default URL{url_bit} when you ask me to get, show, or do something — "
-        "I won't open the browser until then."
+        f"I open the browser only for web tasks — a URL you name, or the Application URL{url_bit} "
+        "when you ask to get/show/search something online. Attached files are read locally."
     )
 
     if re.match(r"^(thanks|thank you|thx|ty)\b", text):
@@ -167,13 +321,14 @@ def general_chat_reply(task: str, *, application_url: str | None = None) -> str:
         return f"Hello. {can_load}"
     if _CAPABILITY.search(text):
         return (
-            "I run browser tasks for you — navigate, fill forms, scrape, and report what I observe. "
+            "I run browser tasks when you need the web — navigate, fill forms, scrape, upload. "
             + can_load
-            + ' Example: "get the latest AED to INR price" or "show the homepage". '
-            + 'You can also say "log this to Jira" or "create a Confluence page" once Atlassian is configured in Settings.'
+            + ' Example: "go to example.com and list the nav links" or "get the latest AED to INR price". '
+            + 'For a CSV you attached, ask "describe this file" — I will not open a browser. '
+            + 'You can also say "log this to Jira" once Atlassian is configured in Settings.'
         )
     return (
-        "Tell me what to get, show, or do"
-        + (f" on {app}" if app else "")
-        + ". I won't open the browser for chat alone."
+        "Tell me a web task"
+        + (f" (default site: {app})" if app else "")
+        + ', or attach a file and ask me to describe it. I will not open the browser until then.'
     )

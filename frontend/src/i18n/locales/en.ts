@@ -220,6 +220,13 @@ export const en = {
   activeCount: 'Active',
   queuedCount: 'Queued',
   copied: 'copied',
+  scrollToLatest: 'Scroll down',
+  voiceStart: 'Start voice input',
+  voiceStop: 'Stop listening',
+  voiceHint: 'mic for voice',
+  voiceUnsupported: 'Voice input needs Chrome or Edge (Speech Recognition).',
+  voicePermissionDenied: 'Microphone permission denied. Allow mic access and try again.',
+  voiceError: 'Voice input failed. Check your microphone and try again.',
 } as const
 
 export type MessageKey = keyof typeof en

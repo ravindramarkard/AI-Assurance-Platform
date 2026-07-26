@@ -219,4 +219,11 @@ export const ar: Record<MessageKey, string> = {
   activeCount: 'نشط',
   queuedCount: 'في الانتظار',
   copied: 'تم النسخ',
+  scrollToLatest: 'مرّر للأسفل',
+  voiceStart: 'بدء الإدخال الصوتي',
+  voiceStop: 'إيقاف الاستماع',
+  voiceHint: 'ميكروفون للصوت',
+  voiceUnsupported: 'الإدخال الصوتي يحتاج Chrome أو Edge (Speech Recognition).',
+  voicePermissionDenied: 'تم رفض إذن الميكروفون. اسمح بالوصول وحاول مجددًا.',
+  voiceError: 'فشل الإدخال الصوتي. تحقق من الميكروفون وحاول مجددًا.',
 }

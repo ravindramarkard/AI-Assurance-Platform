@@ -177,12 +177,14 @@ def apply_urls(
     """
     Return (enriched_task, start_url_used).
 
-    Priority:
-    1. URL / domain already in the task (never overridden by Runtime or Application URL)
-    2. prefer_url (e.g. session current_url for export follow-ups)
+    Priority (highest first):
+    1. URL / domain already in the task — never overridden
+    2. prefer_url (e.g. session current_url for continuations)
     3. Runtime URL (per-run override) when the task has no destination
-    4. Application URL (default) when the task has no destination
+    4. Application URL (Settings default) when the task needs a site but named none
        — skipped when skip_default_url is True
+
+    Callers must already decide that a browser is needed (see chat_gate.needs_browser).
     """
     text = (task or "").strip()
 
@@ -198,7 +200,10 @@ def apply_urls(
     if task_url:
         # Soft hint so browser-use directly_open_url / the agent start at the right place
         if not _HTTP_RE.search(text):
-            enriched = f"Start by opening {task_url}.\n\nTask: {text}"
+            enriched = (
+                f"Start by opening {task_url} (URL from the user task — do not open a different default site).\n\n"
+                f"Task: {text}"
+            )
             return enriched, task_url
         return text, task_url
 
@@ -213,7 +218,12 @@ def apply_urls(
 
     runtime = normalize_url(runtime_url)
     if runtime and not skip_default_url:
-        enriched = f"Start by opening {runtime}.\n\nTask: {text}" if text else f"Open {runtime}."
+        enriched = (
+            f"Start by opening {runtime} (Runtime URL for this run — do not open Application URL instead).\n\n"
+            f"Task: {text}"
+            if text
+            else f"Open {runtime}."
+        )
         return enriched, runtime
 
     if skip_default_url:
@@ -227,6 +237,10 @@ def apply_urls(
 
     app = normalize_url(application_url)
     if app and text:
-        return f"Start by opening {app}.\n\nTask: {text}", app
+        return (
+            f"Start by opening {app} (Application URL from Settings — "
+            f"only because the task needs the web and did not name a URL).\n\n"
+            f"Task: {text}"
+        ), app
 
     return text, None

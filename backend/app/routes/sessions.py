@@ -62,13 +62,19 @@ async def _save_uploads(session_id: str, files: list[UploadFile]) -> list[str]:
     return saved
 
 
-def _task_with_attachments(task: str, saved: list[str]) -> str:
+def _task_with_attachments(task: str, session_id: str, saved: list[str]) -> str:
     if not saved:
         return task
-    listing = "\n".join(f"- workspace/{p}" for p in saved)
+    lines: list[str] = []
+    for rel in saved:
+        abs_path = (session_dir(session_id) / "workspace" / rel).resolve()
+        lines.append(f"- {abs_path}")
+    listing = "\n".join(lines)
     return (
         f"{task.rstrip()}\n\n"
-        f"[Attached files saved under the session workspace — use them as needed:]\n{listing}"
+        f"[Attached files — use the upload_file action with these absolute paths. "
+        f"Do NOT click the OS file picker. Do NOT click Submit until the page shows the filename:]\n"
+        f"{listing}"
     )
 
 
@@ -139,7 +145,7 @@ async def create_session_with_files(
     sid = session["id"]
     session_dir(sid)
     saved = await _save_uploads(sid, real_files)
-    final_task = _task_with_attachments(task, saved)
+    final_task = _task_with_attachments(task, sid, saved)
     if saved:
         await db.update_session(sid, task=final_task)
         await db.add_message(

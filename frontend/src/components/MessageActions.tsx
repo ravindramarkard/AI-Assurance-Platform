@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, type Event } from '../api'
 import {
   copyText,
   downloadHtml,
+  embedStepScreenshots,
+  eventsToReportSteps,
   extractMentionedFiles,
   printAsPdf,
   type ReportMeta,
@@ -14,6 +16,8 @@ type Props = {
   /** User prompt that produced this assistant reply */
   prompt?: string
   sessionId?: string | null
+  /** Session events — used to include step screenshots in HTML/PDF */
+  events?: Event[]
   onOpenFile?: (path: string) => void
 }
 
@@ -35,12 +39,17 @@ export default function MessageActions({
   title = 'AgentBrowser report',
   prompt,
   sessionId,
+  events = [],
   onOpenFile,
 }: Props) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [username, setUsername] = useState(cachedUsername || '')
   const mentioned = useMemo(() => extractMentionedFiles(content), [content])
+  const stepCount = useMemo(
+    () => (events || []).filter((e) => e.type === 'step').length,
+    [events],
+  )
 
   useEffect(() => {
     if (username) return
@@ -53,6 +62,16 @@ export default function MessageActions({
     prompt: (prompt || '').trim() || undefined,
     timestamp: new Date().toLocaleString(),
   })
+
+  const buildMetaWithSteps = async (): Promise<ReportMeta> => {
+    const user = username || (await resolveUsername())
+    const meta: ReportMeta = { ...reportMeta(), username: user }
+    if (!sessionId || !events?.length) return meta
+    let steps = eventsToReportSteps(events)
+    if (!steps.length) return meta
+    steps = await embedStepScreenshots(sessionId, steps, api.screenshotUrl)
+    return { ...meta, steps }
+  }
 
   const run = async (key: string, fn: () => void | Promise<void>) => {
     setBusy(key)
@@ -93,14 +112,18 @@ export default function MessageActions({
           disabled={!!busy}
           onClick={() =>
             void run('html', async () => {
-              const user = username || (await resolveUsername())
-              downloadHtml(content, { ...reportMeta(), username: user })
+              const meta = await buildMetaWithSteps()
+              downloadHtml(content, meta)
             })
           }
-          title="Download as HTML file"
+          title={
+            stepCount > 0
+              ? `Download HTML with ${stepCount} step screenshot(s)`
+              : 'Download as HTML file'
+          }
         >
           <span aria-hidden>📄</span>
-          HTML
+          {busy === 'html' ? 'Preparing…' : 'HTML'}
         </button>
         <button
           type="button"
@@ -108,8 +131,7 @@ export default function MessageActions({
           disabled={!!busy}
           onClick={() =>
             void run('pdf', async () => {
-              const user = username || (await resolveUsername())
-              const meta = { ...reportMeta(), username: user }
+              const meta = await buildMetaWithSteps()
               if (!printAsPdf(content, meta)) {
                 window.alert(
                   'Could not open the print dialog. An HTML file was downloaded instead — open it and use Print → Save as PDF.',
@@ -117,12 +139,22 @@ export default function MessageActions({
               }
             })
           }
-          title="Open print dialog — choose Save as PDF"
+          title={
+            stepCount > 0
+              ? `Print / Save as PDF with ${stepCount} step screenshot(s)`
+              : 'Open print dialog — choose Save as PDF'
+          }
         >
           <span aria-hidden>⇩</span>
-          PDF
+          {busy === 'pdf' ? 'Preparing…' : 'PDF'}
         </button>
       </div>
+      {stepCount > 0 && (
+        <p className="text-[10px] text-slate-500">
+          HTML / PDF include {stepCount} step{stepCount === 1 ? '' : 's'} with screenshots and
+          details.
+        </p>
+      )}
 
       {sessionId && mentioned.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">

@@ -219,4 +219,11 @@ export const hi: Record<MessageKey, string> = {
   activeCount: 'सक्रिय',
   queuedCount: 'कतार',
   copied: 'कॉपी हुआ',
+  scrollToLatest: 'नीचे स्क्रॉल करें',
+  voiceStart: 'वॉइस इनपुट शुरू करें',
+  voiceStop: 'सुनना बंद करें',
+  voiceHint: 'माइक से बोलें',
+  voiceUnsupported: 'वॉइस इनपुट के लिए Chrome या Edge चाहिए (Speech Recognition)।',
+  voicePermissionDenied: 'माइक्रोफ़ोन अनुमति अस्वीकृत। अनुमति दें और फिर कोशिश करें।',
+  voiceError: 'वॉइस इनपुट विफल। माइक्रोफ़ोन जाँचें और फिर कोशिश करें।',
 }

@@ -5,6 +5,7 @@ import { usePreferences } from '../preferences'
 import ScheduleJobModal from './ScheduleJobModal'
 import LogIssueModal from './LogIssueModal'
 import MessageActions from './MessageActions'
+import VoiceInputButton from './VoiceInputButton'
 
 type Props = {
   session: Session | null
@@ -318,13 +319,38 @@ export default function ChatPanel({
   const { t } = usePreferences()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [voiceErr, setVoiceErr] = useState('')
   const [expandedThought, setExpandedThought] = useState<Record<string, boolean>>({})
   const [expandedCode, setExpandedCode] = useState<Record<string, boolean>>({})
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [logIssueOpen, setLogIssueOpen] = useState(false)
   const [scheduleToast, setScheduleToast] = useState<string | null>(null)
   const [dismissedFollowUps, setDismissedFollowUps] = useState(false)
+  const [stickToBottom, setStickToBottom] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
+
+  const NEAR_BOTTOM_PX = 96
+
+  const isNearBottom = (el: HTMLElement) =>
+    el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottomRef.current = true
+    setStickToBottom(true)
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }
+
+  const onTimelineScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const near = isNearBottom(el)
+    stickToBottomRef.current = near
+    setStickToBottom(near)
+  }
 
   const clearSession = () => {
     if (!session) return
@@ -345,6 +371,12 @@ export default function ChatPanel({
     setDismissedFollowUps(false)
   }, [session?.id, session?.status, messages.length])
 
+  // New session → resume auto-follow
+  useEffect(() => {
+    stickToBottomRef.current = true
+    setStickToBottom(true)
+  }, [session?.id])
+
   const thinking =
     session?.status === 'running' ||
     session?.status === 'queued' ||
@@ -357,9 +389,14 @@ export default function ChatPanel({
   }, [session, messages, events, thinking, dismissedFollowUps])
 
   useEffect(() => {
-    // Keep the latest reply in view (answers now sit under each turn's tools)
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages.length, events.length, followUps.length, session?.status])
+    if (!stickToBottomRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    // Instant while the agent is streaming steps; smooth otherwise
+    const behavior: ScrollBehavior =
+      session?.status === 'running' || session?.status === 'thinking' ? 'auto' : 'smooth'
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }, [messages.length, events.length, followUps.length, session?.status, stickToBottom])
 
   const timeline = useMemo(() => {
     const items: TimelineItem[] = []
@@ -492,6 +529,7 @@ export default function ChatPanel({
     setSending(true)
     setText('')
     setDismissedFollowUps(true)
+    scrollToBottom('smooth')
     try {
       await onSend(content)
     } finally {
@@ -618,7 +656,12 @@ export default function ChatPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto scroll p-6 space-y-5">
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={onTimelineScroll}
+          className="flex-1 overflow-y-auto scroll p-6 space-y-5"
+        >
         {timeline.map((item, idx) => {
           if (item.kind === 'message') {
             const m = item.message
@@ -640,6 +683,7 @@ export default function ChatPanel({
                   title={session?.title || session?.task || 'AgentBrowser report'}
                   prompt={promptByAssistantId.get(m.id) || session?.task || ''}
                   sessionId={session?.id}
+                  events={events}
                   onOpenFile={onOpenFile}
                 />
               </div>
@@ -860,6 +904,21 @@ export default function ChatPanel({
           </div>
         )}
         <div ref={bottomRef} />
+        </div>
+        {!stickToBottom && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom('smooth')}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-line bg-ink-850/95 text-slate-200 text-[12px] font-semibold shadow-xl hover:border-bu-500/50 hover:text-bu-400 backdrop-blur-sm"
+            title={t('scrollToLatest')}
+            aria-label={t('scrollToLatest')}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M12 5v14M5 12l7 7 7-7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {t('scrollToLatest')}
+          </button>
+        )}
       </div>
 
       <div className="border-t border-line p-4 flex-shrink-0 bg-ink-900 space-y-2">
@@ -984,6 +1043,15 @@ export default function ChatPanel({
               {t('clear')}
             </button>
           )}
+          <VoiceInputButton
+            value={text}
+            onChange={(next) => {
+              setVoiceErr('')
+              setText(next)
+            }}
+            disabled={sending || thinking}
+            onError={setVoiceErr}
+          />
           <button
             type="button"
             onClick={() => void send()}
@@ -996,7 +1064,8 @@ export default function ChatPanel({
             </svg>
           </button>
         </div>
-        <div className="text-[10px] text-slate-500 mt-2">⏎ send · ⇧⏎ newline</div>
+        {voiceErr && <p className="text-[11px] text-red-400 mt-1.5">{voiceErr}</p>}
+        <div className="text-[10px] text-slate-500 mt-2">⏎ send · ⇧⏎ newline · {t('voiceHint')}</div>
       </div>
 
       {scheduleOpen && (
