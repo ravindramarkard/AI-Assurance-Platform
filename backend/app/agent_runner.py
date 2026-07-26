@@ -417,6 +417,14 @@ async def run_session(session_id: str, task: str) -> None:
         str(extend_system) if extend_system else None
     )
 
+    # Keycloak SSO — append login instructions when configured
+    from . import keycloak as keycloak_mod
+
+    kc_msg = keycloak_mod.login_system_message(cfg)
+    if kc_msg:
+        extend_system = f"{extend_system}\n\n{kc_msg}"
+    kc_secrets = keycloak_mod.sensitive_data_for_agent(cfg)
+
     app_url = str(cfg.get("application_url") or "") or None
     runtime_url = opts.get("runtime_url")
 
@@ -642,6 +650,8 @@ async def run_session(session_id: str, task: str) -> None:
                 {"navigate": {"url": task_dest, "new_tab": False}}
             ]
         agent_kwargs["extend_system_message"] = extend_system
+        if kc_secrets:
+            agent_kwargs["sensitive_data"] = kc_secrets
 
         agent = Agent(**agent_kwargs)
 

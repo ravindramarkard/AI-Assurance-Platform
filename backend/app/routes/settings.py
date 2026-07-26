@@ -31,6 +31,14 @@ ALLOWED = {
     "jira_project_key",
     "confluence_base_url",
     "confluence_space_key",
+    "keycloak_enabled",
+    "keycloak_base_url",
+    "keycloak_realm",
+    "keycloak_client_id",
+    "keycloak_client_secret",
+    "keycloak_username",
+    "keycloak_password",
+    "keycloak_redirect_uri",
 }
 
 
@@ -48,6 +56,9 @@ async def update_settings(body: SettingsUpdate):
         if k == "headless":
             await db.set_setting(k, "true" if v else "false")
             env_settings.headless = bool(v)
+        elif k == "keycloak_enabled":
+            await db.set_setting(k, "true" if v else "false")
+            env_settings.keycloak_enabled = bool(v)
         elif k == "max_concurrent_agents":
             n = max(1, min(int(v), 8))
             await db.set_setting(k, str(n))

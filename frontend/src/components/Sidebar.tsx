@@ -2,7 +2,15 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { Session } from '../api'
 import { usePreferences } from '../preferences'
 
-export type SidebarView = 'sessions' | 'scheduled' | 'browsers' | 'analytics' | 'settings'
+export type SidebarView =
+  | 'sessions'
+  | 'scheduled'
+  | 'browsers'
+  | 'analytics'
+  | 'a2a'
+  | 'redteam'
+  | 'apitest'
+  | 'settings'
 
 type Props = {
   sessions: Session[]
@@ -62,6 +70,33 @@ function IconAnalytics({ className = 'w-4 h-4' }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M4 19V5M4 19h16" strokeLinecap="round" />
       <path d="M8 15v-4M12 15V8M16 15v-6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconA2A({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 3l8 5v8l-8 5-8-5V8l8-5Z" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function IconRedTeam({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 9.5C8 19.2 5 15.5 5 11V6l7-3Z" />
+      <path d="M9.5 12.5 12 15l3.5-4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function IconApiTest({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <path d="M8 10h3M8 14h8M15 10h1" strokeLinecap="round" />
     </svg>
   )
 }
@@ -186,6 +221,39 @@ export default function Sidebar({
         onView('analytics')
       },
       active: view === 'analytics',
+    },
+    {
+      id: 'a2a',
+      label: t('navA2A'),
+      title: t('a2aConsole'),
+      icon: <IconA2A />,
+      onClick: () => {
+        setHistoryFocus(false)
+        onView('a2a')
+      },
+      active: view === 'a2a',
+    },
+    {
+      id: 'redteam',
+      label: t('navRedTeam'),
+      title: t('rtConsole'),
+      icon: <IconRedTeam />,
+      onClick: () => {
+        setHistoryFocus(false)
+        onView('redteam')
+      },
+      active: view === 'redteam',
+    },
+    {
+      id: 'apitest',
+      label: t('navApiTest'),
+      title: t('apiConsole'),
+      icon: <IconApiTest />,
+      onClick: () => {
+        setHistoryFocus(false)
+        onView('apitest')
+      },
+      active: view === 'apitest',
     },
   ]
 

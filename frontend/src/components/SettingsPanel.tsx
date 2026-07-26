@@ -39,6 +39,14 @@ type FormState = {
   jira_project_key: string
   confluence_base_url: string
   confluence_space_key: string
+  keycloak_enabled: boolean
+  keycloak_base_url: string
+  keycloak_realm: string
+  keycloak_client_id: string
+  keycloak_client_secret: string
+  keycloak_username: string
+  keycloak_password: string
+  keycloak_redirect_uri: string
 }
 
 export default function SettingsPanel({ settings, onSaved }: Props) {
@@ -64,10 +72,19 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     jira_project_key: '',
     confluence_base_url: '',
     confluence_space_key: '',
+    keycloak_enabled: false,
+    keycloak_base_url: '',
+    keycloak_realm: '',
+    keycloak_client_id: '',
+    keycloak_client_secret: '',
+    keycloak_username: '',
+    keycloak_password: '',
+    keycloak_redirect_uri: '',
   })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [testMsg, setTestMsg] = useState('')
+  const [keycloakTestMsg, setKeycloakTestMsg] = useState('')
 
   useEffect(() => {
     if (!settings) return
@@ -89,6 +106,12 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       jira_project_key: settings.jira_project_key || '',
       confluence_base_url: settings.confluence_base_url || '',
       confluence_space_key: settings.confluence_space_key || '',
+      keycloak_enabled: !!settings.keycloak_enabled,
+      keycloak_base_url: settings.keycloak_base_url || '',
+      keycloak_realm: settings.keycloak_realm || '',
+      keycloak_client_id: settings.keycloak_client_id || '',
+      keycloak_username: settings.keycloak_username || '',
+      keycloak_redirect_uri: settings.keycloak_redirect_uri || '',
     }))
     const th = settings.ui_theme === 'contrast' ? 'light' : settings.ui_theme
     if (th && (THEME_OPTIONS as string[]).includes(th)) setTheme(th as ThemeMode)
@@ -117,6 +140,12 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         jira_project_key: form.jira_project_key.trim(),
         confluence_base_url: form.confluence_base_url.trim(),
         confluence_space_key: form.confluence_space_key.trim(),
+        keycloak_enabled: form.keycloak_enabled,
+        keycloak_base_url: form.keycloak_base_url.trim(),
+        keycloak_realm: form.keycloak_realm.trim(),
+        keycloak_client_id: form.keycloak_client_id.trim(),
+        keycloak_username: form.keycloak_username.trim(),
+        keycloak_redirect_uri: form.keycloak_redirect_uri.trim(),
       }
       if (form.llm_api_key && !form.llm_api_key.includes('••')) body.llm_api_key = form.llm_api_key
       if (form.browser_use_api_key && !form.browser_use_api_key.includes('••'))
@@ -126,6 +155,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         body.anthropic_api_key = form.anthropic_api_key
       if (form.jira_api_token && !form.jira_api_token.includes('••'))
         body.jira_api_token = form.jira_api_token
+      if (form.keycloak_password && !form.keycloak_password.includes('••'))
+        body.keycloak_password = form.keycloak_password
+      if (form.keycloak_client_secret && !form.keycloak_client_secret.includes('••'))
+        body.keycloak_client_secret = form.keycloak_client_secret
       const s = await api.updateSettings(body)
       onSaved(s)
       setMsg(t('saved'))
@@ -136,6 +169,8 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         openai_api_key: '',
         anthropic_api_key: '',
         jira_api_token: '',
+        keycloak_password: '',
+        keycloak_client_secret: '',
         browser_engine: (s.browser_engine as BrowserEngine) || f.browser_engine,
         browser_executable: s.browser_executable || '',
         application_url: s.application_url || '',
@@ -147,6 +182,12 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         jira_project_key: s.jira_project_key || '',
         confluence_base_url: s.confluence_base_url || '',
         confluence_space_key: s.confluence_space_key || '',
+        keycloak_enabled: !!s.keycloak_enabled,
+        keycloak_base_url: s.keycloak_base_url || '',
+        keycloak_realm: s.keycloak_realm || '',
+        keycloak_client_id: s.keycloak_client_id || '',
+        keycloak_username: s.keycloak_username || '',
+        keycloak_redirect_uri: s.keycloak_redirect_uri || '',
       }))
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Save failed')
@@ -408,6 +449,138 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             site open that site directly — Application URL is skipped. Override for a single run with{' '}
             <span className="text-slate-400">Runtime URL</span> on the home screen.
           </p>
+        </div>
+
+        <div className="mb-6 border-t border-line pt-5">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h2 className="text-sm font-medium text-slate-200">{t('keycloakTitle')}</h2>
+            {settings?.keycloak_configured && (
+              <span className="text-[10px] uppercase tracking-wide text-emerald-400 font-semibold">
+                {t('configured')}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 mb-3">{t('keycloakBlurb')}</p>
+          <label className="flex items-center gap-2 mb-3 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={form.keycloak_enabled}
+              onChange={(e) => setForm({ ...form, keycloak_enabled: e.target.checked })}
+              className="rounded border-line"
+            />
+            {t('keycloakEnable')}
+          </label>
+          <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('keycloakBaseUrl')}</span>
+            <input
+              type="url"
+              value={form.keycloak_base_url}
+              placeholder="https://auth.company.com"
+              disabled={!form.keycloak_enabled}
+              onChange={(e) => setForm({ ...form, keycloak_base_url: e.target.value })}
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
+            />
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+            <label className="block">
+              <span className="text-xs text-slate-400 block mb-1">{t('keycloakRealm')}</span>
+              <input
+                type="text"
+                value={form.keycloak_realm}
+                placeholder="myrealm"
+                disabled={!form.keycloak_enabled}
+                onChange={(e) => setForm({ ...form, keycloak_realm: e.target.value })}
+                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-400 block mb-1">{t('keycloakClientId')}</span>
+              <input
+                type="text"
+                value={form.keycloak_client_id}
+                placeholder="my-app"
+                disabled={!form.keycloak_enabled}
+                onChange={(e) => setForm({ ...form, keycloak_client_id: e.target.value })}
+                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+              />
+            </label>
+          </div>
+          <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('keycloakClientSecret')}</span>
+            <input
+              type="password"
+              value={form.keycloak_client_secret}
+              placeholder={
+                settings?.has_keycloak_client_secret ? '••••••••' : t('keycloakClientSecretHint')
+              }
+              disabled={!form.keycloak_enabled}
+              onChange={(e) => setForm({ ...form, keycloak_client_secret: e.target.value })}
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
+            />
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+            <label className="block">
+              <span className="text-xs text-slate-400 block mb-1">{t('keycloakUsername')}</span>
+              <input
+                type="text"
+                value={form.keycloak_username}
+                placeholder="test.user"
+                disabled={!form.keycloak_enabled}
+                onChange={(e) => setForm({ ...form, keycloak_username: e.target.value })}
+                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-400 block mb-1">{t('keycloakPassword')}</span>
+              <input
+                type="password"
+                value={form.keycloak_password}
+                placeholder={settings?.has_keycloak_password ? '••••••••' : ''}
+                disabled={!form.keycloak_enabled}
+                onChange={(e) => setForm({ ...form, keycloak_password: e.target.value })}
+                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
+              />
+            </label>
+          </div>
+          <label className="block mb-3">
+            <span className="text-xs text-slate-400 block mb-1">{t('keycloakRedirectUri')}</span>
+            <input
+              type="url"
+              value={form.keycloak_redirect_uri}
+              placeholder={form.application_url || 'https://app.company.com (optional)'}
+              disabled={!form.keycloak_enabled}
+              onChange={(e) => setForm({ ...form, keycloak_redirect_uri: e.target.value })}
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
+            />
+            <span className="text-[10px] text-slate-500 mt-1 block">{t('keycloakRedirectHint')}</span>
+          </label>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50 disabled:opacity-40"
+            disabled={!form.keycloak_enabled}
+            onClick={() => {
+              setKeycloakTestMsg('')
+              void api
+                .testIntegration('keycloak')
+                .then((r) => {
+                  const info = r as { realm?: string; client_id?: string; expires_in?: number }
+                  setKeycloakTestMsg(
+                    `Keycloak OK${info.realm ? ` — realm ${info.realm}` : ''}${
+                      info.expires_in ? ` · token ${info.expires_in}s` : ''
+                    }`,
+                  )
+                })
+                .catch((e) =>
+                  setKeycloakTestMsg(e instanceof Error ? e.message : String(e)),
+                )
+            }}
+          >
+            {t('testKeycloak')}
+          </button>
+          {keycloakTestMsg && (
+            <p className="text-[11px] text-slate-400 mt-2 break-all">{keycloakTestMsg}</p>
+          )}
+          <p className="text-[10px] text-slate-500 mt-2">{t('keycloakTestHint')}</p>
         </div>
 
         <div className="mb-6 border-t border-line pt-5">

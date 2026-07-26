@@ -25,6 +25,10 @@ Priority — follow this order and stop at the first match:
 
 Stay on the start URL / task destination unless the user clearly asks to go elsewhere.
 
+## Keycloak / SSO
+
+If Keycloak credentials are configured (see system instructions), use the `<secret>…</secret>` placeholders on the login form. Never type real passwords into the thought text.
+
 ## The 7 rules
 
 1. **Lead with the answer.** First line is the result, not the process.

@@ -18,6 +18,9 @@ import SettingsPanel from './components/SettingsPanel'
 import AgentPage from './components/AgentPage'
 import AgentSessionsPage from './components/AgentSessionsPage'
 import ScheduledJobsPage from './components/ScheduledJobsPage'
+import A2AConsolePage from './components/A2AConsolePage'
+import RedTeamConsolePage from './components/RedTeamConsolePage'
+import ApiTestConsolePage from './components/ApiTestConsolePage'
 
 const RIGHT_PANEL_MIN = 320
 const RIGHT_PANEL_DEFAULT = 560
@@ -34,7 +37,16 @@ function clampSidebarWidth(w: number): number {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)))
 }
 
-type View = 'agent' | 'sessions' | 'scheduled' | 'browsers' | 'analytics' | 'settings'
+type View =
+  | 'agent'
+  | 'sessions'
+  | 'scheduled'
+  | 'browsers'
+  | 'analytics'
+  | 'a2a'
+  | 'redteam'
+  | 'apitest'
+  | 'settings'
 
 export default function App() {
   const { t, theme, setTheme, locale, setLocale, resolvedTheme } = usePreferences()
@@ -511,6 +523,22 @@ export default function App() {
           <BrowsersView />
         ) : view === 'analytics' ? (
           <AnalyticsView sessions={sessions} />
+        ) : view === 'a2a' ? (
+          <A2AConsolePage
+            sessions={sessions}
+            onOpenSession={(id) => {
+              void loadSession(id)
+            }}
+          />
+        ) : view === 'redteam' ? (
+          <RedTeamConsolePage
+            sessions={sessions}
+            onOpenSession={(id) => {
+              void loadSession(id)
+            }}
+          />
+        ) : view === 'apitest' ? (
+          <ApiTestConsolePage sessions={sessions} />
         ) : showSessionsList ? (
           <AgentSessionsPage
             sessions={sessions}

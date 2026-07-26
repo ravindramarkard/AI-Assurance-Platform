@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     confluence_base_url: str = ""
     confluence_space_key: str = ""
 
+    # Keycloak — SSO login for Application URL (browser form + optional token test)
+    keycloak_enabled: bool = False
+    keycloak_base_url: str = ""
+    keycloak_realm: str = ""
+    keycloak_client_id: str = ""
+    keycloak_client_secret: str = ""
+    keycloak_username: str = ""
+    keycloak_password: str = ""
+    keycloak_redirect_uri: str = ""  # optional; defaults to application_url
+
 
 settings = Settings()
 settings.data_dir = Path(settings.data_dir).expanduser().resolve()

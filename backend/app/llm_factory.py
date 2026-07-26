@@ -32,9 +32,17 @@ async def effective_settings() -> dict[str, Any]:
         "jira_project_key": settings.jira_project_key,
         "confluence_base_url": settings.confluence_base_url,
         "confluence_space_key": settings.confluence_space_key,
+        "keycloak_enabled": settings.keycloak_enabled,
+        "keycloak_base_url": settings.keycloak_base_url,
+        "keycloak_realm": settings.keycloak_realm,
+        "keycloak_client_id": settings.keycloak_client_id,
+        "keycloak_client_secret": settings.keycloak_client_secret,
+        "keycloak_username": settings.keycloak_username,
+        "keycloak_password": settings.keycloak_password,
+        "keycloak_redirect_uri": settings.keycloak_redirect_uri,
     }
     for k, v in stored.items():
-        if k == "headless":
+        if k in ("headless", "keycloak_enabled"):
             out[k] = v.lower() in ("1", "true", "yes")
         elif k == "max_concurrent_agents":
             try:
@@ -85,12 +93,22 @@ async def public_settings() -> dict[str, Any]:
         "jira_project_key": s.get("jira_project_key") or "",
         "confluence_base_url": s.get("confluence_base_url") or "",
         "confluence_space_key": s.get("confluence_space_key") or "",
+        "keycloak_enabled": bool(s.get("keycloak_enabled")),
+        "keycloak_base_url": s.get("keycloak_base_url") or "",
+        "keycloak_realm": s.get("keycloak_realm") or "",
+        "keycloak_client_id": s.get("keycloak_client_id") or "",
+        "keycloak_client_secret": _mask(s.get("keycloak_client_secret")),
+        "keycloak_username": s.get("keycloak_username") or "",
+        "keycloak_password": _mask(s.get("keycloak_password")),
+        "keycloak_redirect_uri": s.get("keycloak_redirect_uri") or "",
         "detected_browsers": detected,
         "has_llm_api_key": bool(s.get("llm_api_key")),
         "has_browser_use_api_key": bool(s.get("browser_use_api_key")),
         "has_openai_api_key": bool(s.get("openai_api_key")),
         "has_anthropic_api_key": bool(s.get("anthropic_api_key")),
         "has_jira_api_token": bool(s.get("jira_api_token")),
+        "has_keycloak_password": bool(s.get("keycloak_password")),
+        "has_keycloak_client_secret": bool(s.get("keycloak_client_secret")),
         "jira_configured": bool(
             s.get("jira_base_url")
             and s.get("jira_api_token")
@@ -99,6 +117,14 @@ async def public_settings() -> dict[str, Any]:
                 s.get("jira_email")
                 or (s.get("atlassian_deployment") or "server") == "server"
             )
+        ),
+        "keycloak_configured": bool(
+            s.get("keycloak_enabled")
+            and s.get("keycloak_base_url")
+            and s.get("keycloak_realm")
+            and s.get("keycloak_client_id")
+            and s.get("keycloak_username")
+            and s.get("keycloak_password")
         ),
         "confluence_configured": bool(
             (s.get("confluence_base_url") or s.get("jira_base_url"))

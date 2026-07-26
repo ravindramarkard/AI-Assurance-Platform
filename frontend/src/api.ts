@@ -53,8 +53,19 @@ export type AppSettings = {
   jira_project_key?: string
   confluence_base_url?: string
   confluence_space_key?: string
+  keycloak_enabled?: boolean
+  keycloak_base_url?: string
+  keycloak_realm?: string
+  keycloak_client_id?: string
+  keycloak_client_secret?: string | null
+  keycloak_username?: string
+  keycloak_password?: string | null
+  keycloak_redirect_uri?: string
   has_jira_api_token?: boolean
+  has_keycloak_password?: boolean
+  has_keycloak_client_secret?: boolean
   jira_configured?: boolean
+  keycloak_configured?: boolean
   confluence_configured?: boolean
   detected_browsers?: {
     chromium?: string | null
@@ -247,7 +258,7 @@ export const api = {
     ),
   integrationStatus: () =>
     fetch('/api/integrations/status').then((r) => json<IntegrationStatus>(r)),
-  testIntegration: (service: 'jira' | 'confluence') =>
+  testIntegration: (service: 'jira' | 'confluence' | 'keycloak') =>
     fetch('/api/integrations/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

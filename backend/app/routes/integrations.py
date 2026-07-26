@@ -55,7 +55,10 @@ def _auth_ready(s: dict[str, str]) -> bool:
 
 @router.get("/status")
 async def integration_status():
-    s = _cfg(await effective_settings())
+    from .. import keycloak
+
+    raw = await effective_settings()
+    s = _cfg(raw)
     jira_ready = bool(
         s["jira_base_url"] and s["jira_project_key"] and _auth_ready(s)
     )
@@ -75,11 +78,31 @@ async def integration_status():
             "base_url": s["confluence_base_url"] or None,
             "space_key": s["confluence_space_key"] or None,
         },
+        "keycloak": {
+            "configured": keycloak.is_configured(raw),
+            "enabled": bool(raw.get("keycloak_enabled")),
+            "base_url": str(raw.get("keycloak_base_url") or "") or None,
+            "realm": str(raw.get("keycloak_realm") or "") or None,
+            "client_id": str(raw.get("keycloak_client_id") or "") or None,
+            "username": str(raw.get("keycloak_username") or "") or None,
+        },
     }
 
 
 @router.post("/test")
 async def test_connection(body: IntegrationTestRequest):
+    if body.service == "keycloak":
+        from .. import keycloak
+
+        cfg = await effective_settings()
+        try:
+            return await keycloak.test_password_grant(cfg)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        except Exception as e:
+            logger.exception("keycloak test failed")
+            raise HTTPException(502, str(e)) from e
+
     s = _cfg(await effective_settings())
     if not _auth_ready(s):
         raise HTTPException(

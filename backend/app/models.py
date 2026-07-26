@@ -57,6 +57,15 @@ class SettingsUpdate(BaseModel):
     jira_project_key: str | None = None
     confluence_base_url: str | None = None
     confluence_space_key: str | None = None
+    # Keycloak SSO
+    keycloak_enabled: bool | None = None
+    keycloak_base_url: str | None = None
+    keycloak_realm: str | None = None
+    keycloak_client_id: str | None = None
+    keycloak_client_secret: str | None = None
+    keycloak_username: str | None = None
+    keycloak_password: str | None = None
+    keycloak_redirect_uri: str | None = None
 
 
 class JiraIssueRequest(BaseModel):
@@ -76,7 +85,7 @@ class ConfluencePageRequest(BaseModel):
 
 
 class IntegrationTestRequest(BaseModel):
-    service: Literal["jira", "confluence"] = "jira"
+    service: Literal["jira", "confluence", "keycloak"] = "jira"
 
 
 class SessionOut(BaseModel):
