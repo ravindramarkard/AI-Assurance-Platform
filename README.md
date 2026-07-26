@@ -1,6 +1,6 @@
 # AI Assurance Platform
 
-A local web app for browser agents: task queue, agent sessions, live step logs, browser screenshots, workspace files, and settings — powered by the open-source [`browser-use`](https://github.com/browser-use/browser-use) library.
+A local web app for browser agents: task queue, agent sessions, live step logs, browser screenshots, workspace files, and settings — powered by the open-source .
 
 ## Features
 
@@ -20,12 +20,12 @@ A local web app for browser agents: task queue, agent sessions, live step logs, 
 - A browser: Playwright Chromium (default), installed Google Chrome, or a custom binary path
 - An LLM:
   - **Local:** LM Studio or Ollama with tool calling + context ≥ 16k
-  - **Cloud:** `BROWSER_USE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+  - **Cloud:**  `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 
 ## Setup
 
 ```bash
-cd ~/browser-use
+cd ~/AgentBrower
 
 # Backend
 cd backend
