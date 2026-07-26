@@ -1,0 +1,31 @@
+# Runtime
+data/
+*.db
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Screenshots / recordings
+**/screenshots/
+**/recordings/
+*.webm
+*.mp4
+frontend/tsconfig.tsbuildinfo

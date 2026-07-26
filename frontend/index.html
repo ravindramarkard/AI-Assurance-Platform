@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-scheme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentBrowser</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('aip_theme') || 'dark'
+          if (t === 'contrast') t = 'light'
+          var light = { light: 1, solar: 1, matcha: 1 }
+          if (t === 'system') {
+            t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          }
+          var font = localStorage.getItem('aip_font') || 'inter'
+          var fontSize = localStorage.getItem('aip_font_size') || 'md'
+          document.documentElement.dataset.theme = t
+          document.documentElement.dataset.scheme = light[t] ? 'light' : 'dark'
+          document.documentElement.dataset.font = font
+          document.documentElement.dataset.fontSize = fontSize
+          document.documentElement.style.colorScheme = light[t] ? 'light' : 'dark'
+        } catch (e) {}
+      })()
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-ink-950 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

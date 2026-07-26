@@ -1,0 +1,356 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Typography — Browser Use style
+  UI: Inter 14px / 1.5
+  Titles: 17px semibold
+  Meta: 11–13px
+  Code: JetBrains Mono 12px
+*/
+:root {
+  --ui-font-sans: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ui-fs-xs: 11px;
+  --ui-fs-sm: 13px;
+  --ui-fs-base: 14px;
+  --ui-fs-lg: 17px;
+}
+
+html[data-font='inter'] {
+  --ui-font-sans: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+html[data-font='system'] {
+  --ui-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+html[data-font='source'] {
+  --ui-font-sans: 'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif;
+}
+html[data-font='plex'] {
+  --ui-font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+}
+html[data-font='serif'] {
+  --ui-font-sans: Georgia, 'Times New Roman', 'Noto Serif', serif;
+}
+html[data-font='mono'] {
+  --ui-font-sans: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+html[data-font-size='sm'] {
+  --ui-fs-xs: 10px;
+  --ui-fs-sm: 12px;
+  --ui-fs-base: 13px;
+  --ui-fs-lg: 15px;
+}
+html[data-font-size='md'] {
+  --ui-fs-xs: 11px;
+  --ui-fs-sm: 13px;
+  --ui-fs-base: 14px;
+  --ui-fs-lg: 17px;
+}
+html[data-font-size='lg'] {
+  --ui-fs-xs: 12px;
+  --ui-fs-sm: 14px;
+  --ui-fs-base: 16px;
+  --ui-fs-lg: 19px;
+}
+html[data-font-size='xl'] {
+  --ui-fs-xs: 13px;
+  --ui-fs-sm: 16px;
+  --ui-fs-base: 18px;
+  --ui-fs-lg: 22px;
+}
+
+body {
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-fs-base);
+  line-height: 1.5;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  background: var(--ink-950);
+  color: var(--fg);
+  transition: background-color 0.2s ease, color 0.2s ease, font-size 0.15s ease;
+}
+
+/* Scale common Tailwind text utilities with the user font-size preference */
+.text-xs {
+  font-size: var(--ui-fs-xs) !important;
+}
+.text-sm {
+  font-size: var(--ui-fs-sm) !important;
+}
+.text-base {
+  font-size: var(--ui-fs-base) !important;
+}
+.text-lg {
+  font-size: var(--ui-fs-lg) !important;
+}
+
+code,
+pre,
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  font-feature-settings: 'liga' 0;
+}
+
+.type-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.type-nav {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.type-body {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.type-meta {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.type-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-600);
+  border-radius: 3px;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pulse-dot {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.active-nav {
+  background: color-mix(in srgb, var(--bu-500) 14%, transparent);
+  color: var(--bu-500);
+}
+.active-nav::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--bu-500);
+  border-radius: 0 2px 2px 0;
+}
+[dir='rtl'] .active-nav::before {
+  left: auto;
+  right: 0;
+  border-radius: 2px 0 0 2px;
+}
+
+.step-line {
+  border-left: 1px solid var(--ink-600);
+  padding-left: 12px;
+  margin-left: 6px;
+}
+[dir='rtl'] .step-line {
+  border-left: none;
+  border-right: 1px solid var(--ink-600);
+  padding-left: 0;
+  padding-right: 12px;
+  margin-left: 0;
+  margin-right: 6px;
+}
+
+.agent-code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.tab-active {
+  background: var(--ink-800);
+  color: var(--fg);
+  border-bottom: 2px solid var(--bu-500);
+}
+.tab-inactive {
+  color: var(--fg-muted);
+}
+.tab-inactive:hover {
+  color: var(--fg);
+}
+
+/* Markdown artifact preview */
+.md-preview h1,
+.md-preview h2,
+.md-preview h3,
+.md-preview h4 {
+  color: var(--fg);
+  font-weight: 600;
+  margin: 0.85em 0 0.4em;
+  line-height: 1.3;
+}
+.md-preview h1 { font-size: 1.35rem; }
+.md-preview h2 { font-size: 1.15rem; }
+.md-preview h3 { font-size: 1.05rem; }
+.md-preview p { margin: 0 0 0.75em; color: var(--fg-muted); }
+.md-preview ul,
+.md-preview ol { margin: 0 0 0.85em; padding-left: 1.35rem; color: var(--fg-muted); }
+.md-preview li { margin: 0.25em 0; }
+.md-preview strong { color: var(--fg); font-weight: 600; }
+.md-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--ink-850);
+  border: 1px solid var(--line);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.md-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0 1em;
+  font-size: 0.9em;
+}
+.md-preview th,
+.md-preview td {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.md-preview th {
+  background: var(--ink-850);
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+.md-preview a { color: var(--bu-400); }
+
+/*
+  Theme-aware text for ALL schemes.
+  Must come AFTER @tailwind utilities so slate/white utilities don't
+  paint light-gray-on-light or dark-on-dark (fails accessibility).
+*/
+html[data-scheme] .text-slate-50,
+html[data-scheme] .text-slate-100,
+html[data-scheme] .text-slate-200,
+html[data-scheme] .text-slate-300 {
+  color: var(--fg) !important;
+}
+html[data-scheme] .text-slate-400 {
+  color: color-mix(in srgb, var(--fg) 72%, var(--fg-muted)) !important;
+}
+html[data-scheme] .text-slate-500,
+html[data-scheme] .text-slate-600 {
+  color: var(--fg-muted) !important;
+}
+html[data-scheme] .text-slate-700,
+html[data-scheme] .text-slate-800,
+html[data-scheme] .text-slate-900,
+html[data-scheme] .text-slate-950 {
+  color: var(--fg) !important;
+}
+html[data-scheme] .placeholder-slate-400::placeholder,
+html[data-scheme] .placeholder-slate-500::placeholder,
+html[data-scheme] .placeholder-slate-600::placeholder {
+  color: var(--fg-muted) !important;
+  opacity: 0.85;
+}
+html[data-scheme] .hover\:text-slate-100:hover,
+html[data-scheme] .hover\:text-slate-200:hover,
+html[data-scheme] .hover\:text-slate-300:hover {
+  color: var(--fg) !important;
+}
+html[data-scheme] .hover\:text-slate-400:hover {
+  color: color-mix(in srgb, var(--fg) 80%, var(--fg-muted)) !important;
+}
+html[data-scheme] .border-slate-600,
+html[data-scheme] .border-slate-700 {
+  border-color: var(--line) !important;
+}
+html[data-scheme] .bg-slate-600,
+html[data-scheme] .bg-slate-700,
+html[data-scheme] .bg-slate-800,
+html[data-scheme] .bg-slate-900 {
+  background-color: var(--ink-750) !important;
+}
+
+/* Light scheme: plain "white" text utilities become dark ink */
+html[data-scheme='light'] .text-white:not(.bg-bu-500):not(button.bg-bu-500):not(.accent-fill):not(.accent-gradient):not(.keep-white) {
+  color: var(--fg) !important;
+}
+html[data-scheme='light'] .hover\:text-white:hover:not(.bg-bu-500):not(.accent-fill):not(.accent-gradient) {
+  color: var(--fg) !important;
+}
+html[data-scheme='light'] button.bg-bu-500,
+html[data-scheme='light'] .bg-bu-500,
+html[data-scheme='light'] .bg-bu-500.text-white,
+html[data-scheme='light'] a.bg-bu-500,
+html[data-scheme='light'] .accent-fill,
+html[data-scheme='light'] .accent-gradient {
+  color: #fff !important;
+}
+
+/* Status / accent text readable on light canvases */
+html[data-scheme='light'] .text-red-300,
+html[data-scheme='light'] .text-red-400 {
+  color: #b91c1c !important;
+}
+html[data-scheme='light'] .text-emerald-300,
+html[data-scheme='light'] .text-green-400 {
+  color: #047857 !important;
+}
+html[data-scheme='light'] .text-sky-300,
+html[data-scheme='light'] .text-blue-300,
+html[data-scheme='light'] .text-blue-400 {
+  color: #1d4ed8 !important;
+}
+html[data-scheme='light'] .text-amber-300,
+html[data-scheme='light'] .text-yellow-300 {
+  color: #b45309 !important;
+}
+html[data-scheme='light'] .text-indigo-300 {
+  color: #4338ca !important;
+}
+
+/* Dark scheme: keep primary text bright; muted never too dim */
+html[data-scheme='dark'] .text-white:not(.bg-bu-500):not(button.bg-bu-500):not(.accent-fill):not(.accent-gradient) {
+  color: var(--fg) !important;
+}

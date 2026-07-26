@@ -1,0 +1,266 @@
+/*
+  Theme tokens — surfaces (--ink-*) + accent (--bu-*-rgb for Tailwind opacity).
+  Applied via html[data-theme="…"] and html[data-scheme="light"|"dark"].
+*/
+
+/*
+  Contrast targets (approx WCAG AA on --ink-950):
+  --fg ≥ 7:1, --fg-muted ≥ 4.5:1 for body/UI labels.
+*/
+:root {
+  --ink-950: #0a0a0a;
+  --ink-900: #111111;
+  --ink-850: #161616;
+  --ink-800: #1a1a1a;
+  --ink-750: #222222;
+  --ink-700: #2a2a2a;
+  --ink-600: #404040;
+  --ink-500: #737373;
+  --line: #333333;
+  --fg: #f4f4f5;
+  --fg-muted: #a1a1aa;
+  --code-bg: #0d0d0d;
+  --bu-400-rgb: 255 148 71;
+  --bu-500-rgb: 255 122 26;
+  --bu-600-rgb: 233 106 13;
+  --bu-400: rgb(var(--bu-400-rgb));
+  --bu-500: rgb(var(--bu-500-rgb));
+  --bu-600: rgb(var(--bu-600-rgb));
+  color-scheme: dark;
+}
+
+html[data-theme='dark'] {
+  --ink-950: #0a0a0a;
+  --ink-900: #111111;
+  --ink-850: #161616;
+  --ink-800: #1a1a1a;
+  --ink-750: #222222;
+  --ink-700: #2a2a2a;
+  --ink-600: #404040;
+  --ink-500: #737373;
+  --line: #333333;
+  --fg: #f4f4f5;
+  --fg-muted: #a1a1aa;
+  --code-bg: #0d0d0d;
+  --bu-400-rgb: 255 148 71;
+  --bu-500-rgb: 255 122 26;
+  --bu-600-rgb: 233 106 13;
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  --ink-950: #f4f4f5;
+  --ink-900: #ffffff;
+  --ink-850: #f8fafc;
+  --ink-800: #f1f5f9;
+  --ink-750: #e2e8f0;
+  --ink-700: #cbd5e1;
+  --ink-600: #94a3b8;
+  --ink-500: #64748b;
+  --line: #d4d4d8;
+  --fg: #18181b;
+  --fg-muted: #52525b;
+  --code-bg: #f8fafc;
+  --bu-400-rgb: 255 148 71;
+  --bu-500-rgb: 255 122 26;
+  --bu-600-rgb: 233 106 13;
+  color-scheme: light;
+}
+
+html[data-theme='midnight'] {
+  --ink-950: #070b14;
+  --ink-900: #0c1220;
+  --ink-850: #111827;
+  --ink-800: #152033;
+  --ink-750: #1c2a42;
+  --ink-700: #243552;
+  --ink-600: #3d5474;
+  --ink-500: #7b91b0;
+  --line: #2a3a55;
+  --fg: #f0f5ff;
+  --fg-muted: #a8b8d4;
+  --code-bg: #080d18;
+  --bu-400-rgb: 56 189 248;
+  --bu-500-rgb: 14 165 233;
+  --bu-600-rgb: 2 132 199;
+  color-scheme: dark;
+}
+
+html[data-theme='ocean'] {
+  --ink-950: #061412;
+  --ink-900: #0a1c19;
+  --ink-850: #0f2621;
+  --ink-800: #133029;
+  --ink-750: #1a3d34;
+  --ink-700: #234a40;
+  --ink-600: #3a6b5c;
+  --ink-500: #6a9e8e;
+  --line: #2a5448;
+  --fg: #eefaf6;
+  --fg-muted: #9ec9bc;
+  --code-bg: #04110e;
+  --bu-400-rgb: 45 212 191;
+  --bu-500-rgb: 20 184 166;
+  --bu-600-rgb: 13 148 136;
+  color-scheme: dark;
+}
+
+html[data-theme='nord'] {
+  --ink-950: #1b1f27;
+  --ink-900: #242933;
+  --ink-850: #2a303c;
+  --ink-800: #2e3440;
+  --ink-750: #3b4252;
+  --ink-700: #434c5e;
+  --ink-600: #5a6478;
+  --ink-500: #8b95a8;
+  --line: #434c5e;
+  --fg: #eceff4;
+  --fg-muted: #b0bacd;
+  --code-bg: #171b22;
+  --bu-400-rgb: 136 192 208;
+  --bu-500-rgb: 129 161 193;
+  --bu-600-rgb: 94 129 172;
+  color-scheme: dark;
+}
+
+html[data-theme='ember'] {
+  --ink-950: #120c0a;
+  --ink-900: #1a1210;
+  --ink-850: #221816;
+  --ink-800: #2a1c18;
+  --ink-750: #35241e;
+  --ink-700: #423028;
+  --ink-600: #6b5040;
+  --ink-500: #a8846e;
+  --line: #4a342c;
+  --fg: #faf4ef;
+  --fg-muted: #cbb09e;
+  --code-bg: #0e0908;
+  --bu-400-rgb: 251 146 60;
+  --bu-500-rgb: 249 115 22;
+  --bu-600-rgb: 234 88 12;
+  color-scheme: dark;
+}
+
+html[data-theme='rose'] {
+  --ink-950: #12090e;
+  --ink-900: #1a0f15;
+  --ink-850: #23141c;
+  --ink-800: #2b1822;
+  --ink-750: #38202c;
+  --ink-700: #462a38;
+  --ink-600: #6e4458;
+  --ink-500: #b07a92;
+  --line: #503040;
+  --fg: #fff1f5;
+  --fg-muted: #d4a8ba;
+  --code-bg: #0e070b;
+  --bu-400-rgb: 251 113 133;
+  --bu-500-rgb: 244 63 94;
+  --bu-600-rgb: 225 29 72;
+  color-scheme: dark;
+}
+
+html[data-theme='solar'] {
+  --ink-950: #f3efe6;
+  --ink-900: #faf7f0;
+  --ink-850: #f7f2e8;
+  --ink-800: #efe8da;
+  --ink-750: #e4dccb;
+  --ink-700: #d3c8b2;
+  --ink-600: #a89880;
+  --ink-500: #6f604c;
+  --line: #d6ccb8;
+  --fg: #1c1610;
+  --fg-muted: #5c4f3d;
+  --code-bg: #f5f0e6;
+  --bu-400-rgb: 217 119 6;
+  --bu-500-rgb: 180 83 9;
+  --bu-600-rgb: 146 64 14;
+  color-scheme: light;
+}
+
+html[data-theme='matcha'] {
+  --ink-950: #e8f2eb;
+  --ink-900: #f4faf6;
+  --ink-850: #eef6f1;
+  --ink-800: #e0eee5;
+  --ink-750: #cfe3d6;
+  --ink-700: #b3d0bc;
+  --ink-600: #7aa38a;
+  --ink-500: #3f6b4e;
+  --line: #b9d4c3;
+  --fg: #0f1c14;
+  --fg-muted: #355a42;
+  --code-bg: #eaf5ee;
+  --bu-400-rgb: 74 222 128;
+  --bu-500-rgb: 22 163 74;
+  --bu-600-rgb: 21 128 61;
+  color-scheme: light;
+}
+
+/* Keep accent hex aliases in sync for non-Tailwind CSS */
+html[data-theme] {
+  --bu-400: rgb(var(--bu-400-rgb));
+  --bu-500: rgb(var(--bu-500-rgb));
+  --bu-600: rgb(var(--bu-600-rgb));
+}
+
+/* Light-scheme text remaps live at the end of index.css (after @tailwind
+   utilities) so they win over hardcoded slate/white utility colors. */
+
+.theme-swatch {
+  width: 100%;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--swatch-fg) 20%, transparent);
+  background: linear-gradient(
+    135deg,
+    var(--swatch-bg) 0%,
+    var(--swatch-bg) 55%,
+    var(--swatch-accent) 55%,
+    var(--swatch-accent) 100%
+  );
+}
+
+/* Brand accents — always follow active theme (not hardcoded orange/red) */
+.accent-fill {
+  background-color: var(--bu-500) !important;
+  color: #fff !important;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.accent-fill:hover:not(:disabled) {
+  background-color: var(--bu-600) !important;
+}
+.accent-fill:disabled {
+  opacity: 0.35;
+}
+.accent-gradient {
+  background-image: linear-gradient(135deg, var(--bu-400), var(--bu-600)) !important;
+  color: #fff !important;
+  transition: filter 0.2s ease;
+}
+.accent-chip {
+  color: var(--bu-400) !important;
+  background-color: color-mix(in srgb, var(--bu-500) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--bu-500) 40%, transparent) !important;
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.accent-chip:hover {
+  border-color: var(--bu-500) !important;
+  background-color: color-mix(in srgb, var(--bu-500) 22%, transparent) !important;
+}
+.accent-dot {
+  background-color: var(--bu-500) !important;
+}
+.accent-text {
+  color: var(--bu-400) !important;
+  transition: color 0.2s ease;
+}
+.accent-text:hover {
+  color: var(--bu-500) !important;
+}
+.accent-shadow {
+  box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--bu-500) 45%, transparent);
+}

@@ -1,0 +1,24 @@
+[project]
+name = "bu-local"
+version = "0.1.0"
+description = "Local Browser Use Cloud — task queue, sessions, live UI"
+requires-python = ">=3.11"
+dependencies = [
+  "browser-use>=0.13.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-dotenv>=1.0.0",
+  "aiosqlite>=0.20.0",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "httpx>=0.27.0",
+  "websockets>=13.0",
+  "pillow>=10.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
