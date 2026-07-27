@@ -11,18 +11,16 @@ import {
 } from './preferences'
 import { connectSessionWs } from './ws'
 import Sidebar, { type SidebarView } from './components/Sidebar'
+import AgentBrowserPage, { type AgentBrowserTab } from './components/AgentBrowserPage'
 import ChatPanel from './components/ChatPanel'
 import RightPanel from './components/RightPanel'
 import PanelResizeHandle from './components/PanelResizeHandle'
 import SettingsPanel from './components/SettingsPanel'
 import AgentPage from './components/AgentPage'
 import AgentSessionsPage from './components/AgentSessionsPage'
-import ScheduledJobsPage from './components/ScheduledJobsPage'
 import A2AConsolePage from './components/A2AConsolePage'
 import RedTeamConsolePage from './components/RedTeamConsolePage'
 import ApiTestConsolePage from './components/ApiTestConsolePage'
-import BrowsersView from './components/BrowsersView'
-import AnalyticsView from './components/AnalyticsView'
 
 const RIGHT_PANEL_MIN = 320
 const RIGHT_PANEL_DEFAULT = 560
@@ -39,16 +37,8 @@ function clampSidebarWidth(w: number): number {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)))
 }
 
-type View =
-  | 'agent'
-  | 'sessions'
-  | 'scheduled'
-  | 'browsers'
-  | 'analytics'
-  | 'a2a'
-  | 'redteam'
-  | 'apitest'
-  | 'settings'
+type View = 'agentbrowser' | 'a2a' | 'redteam' | 'apitest' | 'settings'
+type AgentsPane = 'create' | 'list'
 
 export default function App() {
   const { t, theme, setTheme, locale, setLocale, resolvedTheme, consoles } = usePreferences()
@@ -57,7 +47,9 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [session, setSession] = useState<Session | null>(null)
-  const [view, setView] = useState<View>('agent')
+  const [view, setView] = useState<View>('agentbrowser')
+  const [agentBrowserTab, setAgentBrowserTab] = useState<AgentBrowserTab>('agents')
+  const [agentsPane, setAgentsPane] = useState<AgentsPane>('create')
   const [wsConnected, setWsConnected] = useState(false)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [apiOk, setApiOk] = useState(false)
@@ -191,9 +183,9 @@ export default function App() {
   }, [refreshSessions, refreshScheduledCount, setTheme, setLocale])
 
   useEffect(() => {
-    if (view === 'a2a' && !consoles.a2a) setView('sessions')
-    else if (view === 'redteam' && !consoles.redteam) setView('sessions')
-    else if (view === 'apitest' && !consoles.apitest) setView('sessions')
+    if (view === 'a2a' && !consoles.a2a) setView('agentbrowser')
+    else if (view === 'redteam' && !consoles.redteam) setView('agentbrowser')
+    else if (view === 'apitest' && !consoles.apitest) setView('agentbrowser')
   }, [view, consoles])
 
   const goHome = useCallback(() => {
@@ -203,12 +195,16 @@ export default function App() {
     setEvents([])
     setOpenFilePath(null)
     setRightTab('browser')
-    setView('agent')
+    setView('agentbrowser')
+    setAgentBrowserTab('agents')
+    setAgentsPane('create')
   }, [])
 
   const loadSession = useCallback(async (id: string) => {
     setActiveId(id)
-    setView('sessions')
+    setView('agentbrowser')
+    setAgentBrowserTab('agents')
+    setAgentsPane('list')
     setOpenFilePath(null)
     setRightTab('browser')
     const [s, msgs, evs] = await Promise.all([
@@ -219,6 +215,17 @@ export default function App() {
     setSession(s)
     setMessages(msgs)
     setEvents(evs)
+  }, [])
+
+  const openAgentsList = useCallback(() => {
+    setActiveId(null)
+    setSession(null)
+    setMessages([])
+    setEvents([])
+    setOpenFilePath(null)
+    setView('agentbrowser')
+    setAgentBrowserTab('agents')
+    setAgentsPane('list')
   }, [])
 
   useEffect(() => {
@@ -392,8 +399,102 @@ export default function App() {
     }
   }
 
-  const showWorkspace = view === 'sessions' && !!activeId
-  const showSessionsList = view === 'sessions' && !activeId
+  const inAgentBrowser = view === 'agentbrowser'
+  const showWorkspace = inAgentBrowser && agentBrowserTab === 'agents' && !!activeId
+  const showSessionsList =
+    inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'list'
+  const showCreate =
+    inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'create'
+
+  const agentsWorkspace = showSessionsList ? (
+    <AgentSessionsPage
+      sessions={sessions}
+      onOpenSession={(id) => {
+        void loadSession(id)
+      }}
+      onCreateSession={goHome}
+      onRefresh={() => {
+        void refreshSessions()
+      }}
+      onDelete={onDeleteSession}
+    />
+  ) : showWorkspace ? (
+    <>
+      <ChatPanel
+        session={session}
+        sessions={sessions}
+        messages={messages}
+        events={events}
+        onSend={onSend}
+        onControl={(action) => {
+          if (!activeId) return
+          void api.control(activeId, action).catch((e) => {
+            window.alert(e instanceof Error ? e.message : 'Control failed')
+          })
+        }}
+        onClearSession={() => {
+          if (!activeId) return
+          void onDeleteSession(activeId)
+        }}
+        onOpenFile={(path) => {
+          setOpenFilePath(path)
+          setRightTab('files')
+        }}
+        onScheduled={() => {
+          void refreshScheduledCount()
+        }}
+        onOpenScheduled={() => {
+          setView('agentbrowser')
+          setAgentBrowserTab('scheduled')
+        }}
+      />
+      {showBrowserPanel && !rightPanelHidden ? (
+        <>
+          <PanelResizeHandle
+            edge="start"
+            label="Resize snaps panel"
+            onResize={onRightPanelResize}
+            onResizeEnd={() => {
+              setRightPanelWidth((w) => {
+                persistRightPanelWidth(w)
+                return w
+              })
+            }}
+          />
+          <RightPanel
+            sessionId={activeId}
+            screenshot={latestScreenshot}
+            url={currentUrl}
+            events={events}
+            status={session?.status}
+            tab={rightTab}
+            onTabChange={setRightTab}
+            focusFile={openFilePath}
+            onHide={toggleRightPanel}
+            width={rightPanelWidth}
+          />
+        </>
+      ) : showBrowserPanel && rightPanelHidden ? (
+        <div className="w-11 border-l border-line bg-ink-900 flex flex-col items-center py-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={toggleRightPanel}
+            title={t('showSnapsPanel')}
+            className="w-8 h-8 rounded-md border border-line bg-ink-800 hover:border-bu-500/50 text-slate-300 flex items-center justify-center"
+            aria-label={t('showSnapsPanel')}
+          >
+            ⊡
+          </button>
+        </div>
+      ) : null}
+    </>
+  ) : showCreate ? (
+    <AgentPage
+      settings={settings}
+      onCreate={onCreate}
+      onOpenSettings={() => setView('settings')}
+    />
+  ) : null
 
   return (
     <div className="bg-ink-950 text-slate-200 h-screen overflow-hidden flex flex-col">
@@ -475,30 +576,15 @@ export default function App() {
 
       <div className="flex flex-1 min-h-0">
         <Sidebar
-          sessions={sessions}
-          activeId={showWorkspace ? activeId : null}
-          view={
-            (view === 'agent' || view === 'sessions'
-              ? 'sessions'
-              : view) as SidebarView
-          }
-          onView={(v) => {
-            if (v === 'sessions') {
-              setActiveId(null)
-              setSession(null)
-              setMessages([])
-              setEvents([])
-              setOpenFilePath(null)
-              setView('sessions')
+          view={view}
+          onView={(v: SidebarView) => {
+            if (v === 'agentbrowser') {
+              setView('agentbrowser')
+              // keep last agentBrowserTab (in-memory persistence)
               return
             }
             setView(v)
           }}
-          onSelect={loadSession}
-          onNew={goHome}
-          onDelete={onDeleteSession}
-          onClearHistory={onClearHistory}
-          scheduledCount={scheduledCount}
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebar}
           width={sidebarWidth}
@@ -519,18 +605,6 @@ export default function App() {
 
         {view === 'settings' ? (
           <SettingsPanel settings={settings} onSaved={(s) => setSettings(s)} />
-        ) : view === 'scheduled' ? (
-          <ScheduledJobsPage
-            settings={settings}
-            sessions={sessions}
-            onOpenSession={(id) => {
-              void loadSession(id)
-            }}
-          />
-        ) : view === 'browsers' ? (
-          <BrowsersView />
-        ) : view === 'analytics' ? (
-          <AnalyticsView sessions={sessions} />
         ) : view === 'a2a' ? (
           <A2AConsolePage
             sessions={sessions}
@@ -547,90 +621,27 @@ export default function App() {
           />
         ) : view === 'apitest' ? (
           <ApiTestConsolePage sessions={sessions} />
-        ) : showSessionsList ? (
-          <AgentSessionsPage
+        ) : (
+          <AgentBrowserPage
+            tab={agentBrowserTab}
+            onTabChange={(tab) => {
+              setAgentBrowserTab(tab)
+              if (tab === 'agents' && !activeId) setAgentsPane('list')
+            }}
+            scheduledCount={scheduledCount}
             sessions={sessions}
+            activeId={showWorkspace ? activeId : null}
+            onNew={goHome}
+            onSelect={(id) => {
+              void loadSession(id)
+            }}
+            onDelete={onDeleteSession}
+            onClearHistory={onClearHistory}
+            agentsWorkspace={agentsWorkspace}
+            settings={settings}
             onOpenSession={(id) => {
               void loadSession(id)
             }}
-            onCreateSession={goHome}
-            onRefresh={() => {
-              void refreshSessions()
-            }}
-            onDelete={onDeleteSession}
-          />
-        ) : showWorkspace ? (
-          <>
-            <ChatPanel
-              session={session}
-              sessions={sessions}
-              messages={messages}
-              events={events}
-              onSend={onSend}
-              onControl={(action) => {
-                if (!activeId) return
-                void api.control(activeId, action).catch((e) => {
-                  window.alert(e instanceof Error ? e.message : 'Control failed')
-                })
-              }}
-              onClearSession={() => {
-                if (!activeId) return
-                void onDeleteSession(activeId)
-              }}
-              onOpenFile={(path) => {
-                setOpenFilePath(path)
-                setRightTab('files')
-              }}
-              onScheduled={() => {
-                void refreshScheduledCount()
-              }}
-              onOpenScheduled={() => setView('scheduled')}
-            />
-            {showBrowserPanel && !rightPanelHidden ? (
-              <>
-                <PanelResizeHandle
-                  edge="start"
-                  label="Resize snaps panel"
-                  onResize={onRightPanelResize}
-                  onResizeEnd={() => {
-                    setRightPanelWidth((w) => {
-                      persistRightPanelWidth(w)
-                      return w
-                    })
-                  }}
-                />
-                <RightPanel
-                  sessionId={activeId}
-                  screenshot={latestScreenshot}
-                  url={currentUrl}
-                  events={events}
-                  status={session?.status}
-                  tab={rightTab}
-                  onTabChange={setRightTab}
-                  focusFile={openFilePath}
-                  onHide={toggleRightPanel}
-                  width={rightPanelWidth}
-                />
-              </>
-            ) : showBrowserPanel && rightPanelHidden ? (
-              <div className="w-11 border-l border-line bg-ink-900 flex flex-col items-center py-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={toggleRightPanel}
-                  title={t('showSnapsPanel')}
-                  className="w-8 h-8 rounded-md border border-line bg-ink-800 hover:border-bu-500/50 text-slate-300 flex items-center justify-center"
-                  aria-label={t('showSnapsPanel')}
-                >
-                  ⊡
-                </button>
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <AgentPage
-            settings={settings}
-            onCreate={onCreate}
-            onOpenSettings={() => setView('settings')}
           />
         )}
       </div>
