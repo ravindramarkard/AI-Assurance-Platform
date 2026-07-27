@@ -93,7 +93,7 @@ export default function AgentBrowserPage({
   const { t } = usePreferences()
 
   const nav: { id: AgentBrowserTab; label: string; icon: ReactNode; badge?: string | null }[] = [
-    { id: 'agents', label: t('navAgents'), icon: <IconAgents /> },
+    { id: 'agents', label: t('agentSessions'), icon: <IconAgents /> },
     { id: 'browsers', label: t('navBrowsers'), icon: <IconBrowsers /> },
     {
       id: 'scheduled',
