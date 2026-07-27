@@ -456,6 +456,11 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           <div className="space-y-2.5">
             {(
               [
+                {
+                  id: 'agentbrowser' as const,
+                  label: t('navAgentBrowser'),
+                  blurb: t('agentBrowserBlurb'),
+                },
                 { id: 'a2a' as const, label: t('navA2A'), blurb: t('a2aConsoleBlurb') },
                 { id: 'redteam' as const, label: t('navRedTeam'), blurb: t('rtConsoleBlurb') },
                 { id: 'apitest' as const, label: t('navApiTest'), blurb: t('apiConsoleBlurb') },

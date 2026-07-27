@@ -55,10 +55,12 @@ const FONT_SIZE_KEY = 'aip_font_size'
 const CONSOLE_A2A_KEY = 'aip_console_a2a'
 const CONSOLE_REDTEAM_KEY = 'aip_console_redteam'
 const CONSOLE_APITEST_KEY = 'aip_console_apitest'
+const CONSOLE_AGENTBROWSER_KEY = 'aip_console_agentbrowser'
 
 const catalogs: Record<Locale, Record<MessageKey, string>> = { en, ar, hi }
 
 export type ConsoleFeatures = {
+  agentbrowser: boolean
   a2a: boolean
   redteam: boolean
   apitest: boolean
@@ -134,6 +136,7 @@ function readStoredBool(key: string, fallback = true): boolean {
 
 function readStoredConsoles(): ConsoleFeatures {
   return {
+    agentbrowser: readStoredBool(CONSOLE_AGENTBROWSER_KEY, true),
     a2a: readStoredBool(CONSOLE_A2A_KEY, true),
     redteam: readStoredBool(CONSOLE_REDTEAM_KEY, true),
     apitest: readStoredBool(CONSOLE_APITEST_KEY, true),
@@ -184,7 +187,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [consoles, setConsoles] = useState<ConsoleFeatures>(() =>
     typeof window !== 'undefined'
       ? readStoredConsoles()
-      : { a2a: true, redteam: true, apitest: true },
+      : { agentbrowser: true, a2a: true, redteam: true, apitest: true },
   )
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     typeof window !== 'undefined' ? resolveTheme(readStoredTheme()) : 'dark',
@@ -201,6 +204,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [theme, locale, font, fontSize])
 
   useEffect(() => {
+    localStorage.setItem(CONSOLE_AGENTBROWSER_KEY, consoles.agentbrowser ? '1' : '0')
     localStorage.setItem(CONSOLE_A2A_KEY, consoles.a2a ? '1' : '0')
     localStorage.setItem(CONSOLE_REDTEAM_KEY, consoles.redteam ? '1' : '0')
     localStorage.setItem(CONSOLE_APITEST_KEY, consoles.apitest ? '1' : '0')
