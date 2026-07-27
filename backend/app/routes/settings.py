@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+import logging
+
+from fastapi import APIRouter, HTTPException
 
 from .. import db
 from ..config import settings as env_settings
-from ..llm_factory import public_settings
-from ..models import SettingsUpdate
+from ..llm_factory import effective_settings, public_settings, test_llm_connection
+from ..models import LlmTestRequest, SettingsUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -71,3 +75,24 @@ async def update_settings(body: SettingsUpdate):
             if hasattr(env_settings, k):
                 setattr(env_settings, k, v)
     return await public_settings()
+
+
+@router.post("/test-llm")
+async def test_llm(body: LlmTestRequest | None = None):
+    """Verify the LLM provider is reachable (uses form overrides when provided)."""
+    cfg = await effective_settings()
+    overrides = (body.model_dump(exclude_none=True) if body else {}) or {}
+    for k, v in overrides.items():
+        if isinstance(v, str) and ("••" in v or not v.strip()):
+            continue
+        cfg[k] = v
+    provider = str(cfg.get("llm_provider") or "local")
+    if provider == "browser_use":
+        # Cloud provider removed from UI; fall back to local for tests.
+        cfg["llm_provider"] = "local"
+        provider = "local"
+    try:
+        return await test_llm_connection(cfg)
+    except Exception as e:
+        logger.exception("LLM test connection failed")
+        raise HTTPException(502, str(e) or f"LLM connection failed ({provider})") from e

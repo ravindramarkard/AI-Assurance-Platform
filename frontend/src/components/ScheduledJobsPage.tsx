@@ -90,6 +90,9 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
     if (res.session_id) onOpenSession(res.session_id)
   }
 
+  const isApiTestJob = (job: ScheduledJob) =>
+    (job.job_type || 'agent') === 'api_test' || job.task.startsWith('[api_test]')
+
   return (
     <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
       <div className="max-w-5xl mx-auto">
@@ -163,6 +166,13 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
                       <span className="px-1.5 py-0.5 rounded bg-ink-700 text-slate-400">
                         schedular
                       </span>
+                      {isApiTestJob(job) ? (
+                        <span className="px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/50">
+                          api_test
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded bg-ink-700 text-slate-400">agent</span>
+                      )}
                       {job.last_session_id && (
                         <button
                           type="button"
@@ -172,6 +182,11 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
                           {t('lastRun')}
                         </button>
                       )}
+                      {isApiTestJob(job) && job.last_run_id ? (
+                        <span className="text-slate-500 mono" title={job.last_run_id}>
+                          run {job.last_run_id.slice(0, 8)}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-300 align-top whitespace-nowrap">

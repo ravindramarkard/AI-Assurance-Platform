@@ -22,9 +22,18 @@ async def list_jobs():
 
 @router.post("")
 async def create_job(body: CreateScheduledJobRequest):
+    job_type = body.job_type or "agent"
+    task = (body.task or "").strip()
+    if job_type == "agent" and not task:
+        raise HTTPException(400, "Task is required for agent jobs")
+    if job_type == "api_test":
+        payload = body.payload or {}
+        if not payload.get("project_id"):
+            raise HTTPException(400, "payload.project_id is required for api_test jobs")
+        task = task or f"[api_test] Run suite for {payload.get('project_id')}"
     # Due on the next scheduler tick so the first run happens promptly
     job = await db.create_scheduled_job(
-        task=body.task.strip(),
+        task=task,
         name=(body.name or "").strip() or None,
         schedule=body.schedule,
         model=body.model,
@@ -32,6 +41,9 @@ async def create_job(body: CreateScheduledJobRequest):
         start_url=(body.start_url or "").strip() or None,
         system_prompt=(body.system_prompt or "").strip() or None,
         next_run_at=to_iso(utc_now()),
+        enabled=body.enabled,
+        job_type=job_type,
+        payload=body.payload,
     )
     return _enrich(job)
 
@@ -61,6 +73,8 @@ async def update_job(job_id: str, body: UpdateScheduledJobRequest):
         fields["system_prompt"] = fields["system_prompt"].strip() or None
     if "schedule" in fields and fields["schedule"]:
         fields["next_run_at"] = to_iso(next_run_after(fields["schedule"]))
+    if "enabled" in fields:
+        fields["status"] = "active" if fields["enabled"] else "paused"
     job = await db.update_scheduled_job(job_id, **fields)
     return _enrich(job)  # type: ignore[arg-type]
 
@@ -77,5 +91,19 @@ async def run_job_now(job_id: str):
     job = await db.get_scheduled_job(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
-    sid = await fire_job(job)
-    return {"ok": True, "session_id": sid, "job": _enrich(await db.get_scheduled_job(job_id))}  # type: ignore[arg-type]
+    result_id = await fire_job(job)
+    refreshed = await db.get_scheduled_job(job_id)
+    job_type = (job.get("job_type") or "agent").lower()
+    if job_type == "api_test":
+        return {
+            "ok": True,
+            "run_id": result_id,
+            "session_id": None,
+            "job": _enrich(refreshed),  # type: ignore[arg-type]
+        }
+    return {
+        "ok": True,
+        "session_id": result_id,
+        "run_id": None,
+        "job": _enrich(refreshed),  # type: ignore[arg-type]
+    }

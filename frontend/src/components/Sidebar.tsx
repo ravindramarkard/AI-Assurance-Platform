@@ -154,7 +154,7 @@ export default function Sidebar({
   onToggleCollapse,
   width = 240,
 }: Props) {
-  const { t } = usePreferences()
+  const { t, consoles } = usePreferences()
   const [query, setQuery] = useState('')
   const [historyFocus, setHistoryFocus] = useState(false)
 
@@ -222,39 +222,51 @@ export default function Sidebar({
       },
       active: view === 'analytics',
     },
-    {
-      id: 'a2a',
-      label: t('navA2A'),
-      title: t('a2aConsole'),
-      icon: <IconA2A />,
-      onClick: () => {
-        setHistoryFocus(false)
-        onView('a2a')
-      },
-      active: view === 'a2a',
-    },
-    {
-      id: 'redteam',
-      label: t('navRedTeam'),
-      title: t('rtConsole'),
-      icon: <IconRedTeam />,
-      onClick: () => {
-        setHistoryFocus(false)
-        onView('redteam')
-      },
-      active: view === 'redteam',
-    },
-    {
-      id: 'apitest',
-      label: t('navApiTest'),
-      title: t('apiConsole'),
-      icon: <IconApiTest />,
-      onClick: () => {
-        setHistoryFocus(false)
-        onView('apitest')
-      },
-      active: view === 'apitest',
-    },
+    ...(consoles.a2a
+      ? [
+          {
+            id: 'a2a' as const,
+            label: t('navA2A'),
+            title: t('a2aConsole'),
+            icon: <IconA2A />,
+            onClick: () => {
+              setHistoryFocus(false)
+              onView('a2a')
+            },
+            active: view === 'a2a',
+          },
+        ]
+      : []),
+    ...(consoles.redteam
+      ? [
+          {
+            id: 'redteam' as const,
+            label: t('navRedTeam'),
+            title: t('rtConsole'),
+            icon: <IconRedTeam />,
+            onClick: () => {
+              setHistoryFocus(false)
+              onView('redteam')
+            },
+            active: view === 'redteam',
+          },
+        ]
+      : []),
+    ...(consoles.apitest
+      ? [
+          {
+            id: 'apitest' as const,
+            label: t('navApiTest'),
+            title: t('apiConsole'),
+            icon: <IconApiTest />,
+            onClick: () => {
+              setHistoryFocus(false)
+              onView('apitest')
+            },
+            active: view === 'apitest',
+          },
+        ]
+      : []),
   ]
 
   /* ——— Collapsed icon rail (matches Browser Use) ——— */

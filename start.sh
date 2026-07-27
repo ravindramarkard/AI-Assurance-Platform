@@ -3,13 +3,15 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT/backend"
-if [[ ! -d .venv ]]; then
-  uv sync --python 3.12
-fi
+# Always sync so API Test Console deps (pyyaml, jsonschema, jsonpath-ng, …) are present
+echo "Syncing backend dependencies…"
+uv sync --python 3.12
 if [[ ! -f .env ]]; then
   cp .env.example .env
   echo "Created backend/.env — edit LLM settings as needed."
 fi
+# Fail fast if API-test stack is missing
+uv run python -c "import yaml, jsonschema, jsonpath_ng, httpx; print('API test deps OK')"
 
 # Kill previous listeners if present (old API/UI must restart to pick up browser fixes)
 for port in 8742 8743 8744 8745 8746 8747 8748 5173 5174 5175; do

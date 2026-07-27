@@ -50,8 +50,19 @@ type FormState = {
 }
 
 export default function SettingsPanel({ settings, onSaved }: Props) {
-  const { theme, setTheme, locale, setLocale, font, setFont, fontSize, setFontSize, t } =
-    usePreferences()
+  const {
+    theme,
+    setTheme,
+    locale,
+    setLocale,
+    font,
+    setFont,
+    fontSize,
+    setFontSize,
+    consoles,
+    setConsoleEnabled,
+    t,
+  } = usePreferences()
   const [form, setForm] = useState<FormState>({
     llm_provider: 'local',
     llm_base_url: 'http://localhost:1234/v1',
@@ -84,14 +95,20 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [testMsg, setTestMsg] = useState('')
+  const [llmTestMsg, setLlmTestMsg] = useState('')
+  const [llmTesting, setLlmTesting] = useState(false)
   const [keycloakTestMsg, setKeycloakTestMsg] = useState('')
 
   useEffect(() => {
     if (!settings) return
     const engine = (settings.browser_engine || 'chromium') as BrowserEngine
+    const provider =
+      settings.llm_provider === 'openai' || settings.llm_provider === 'anthropic'
+        ? settings.llm_provider
+        : 'local'
     setForm((f) => ({
       ...f,
-      llm_provider: settings.llm_provider || 'local',
+      llm_provider: provider,
       llm_base_url: settings.llm_base_url || f.llm_base_url,
       llm_model: settings.llm_model || f.llm_model,
       headless: settings.headless,
@@ -242,10 +259,53 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
 
   const providers: { value: string; label: string }[] = [
     { value: 'local', label: 'Local (LM Studio / Ollama)' },
-    { value: 'browser_use', label: 'Browser Use Cloud' },
     { value: 'openai', label: 'OpenAI' },
     { value: 'anthropic', label: 'Anthropic' },
   ]
+
+  const testLlmConnection = async () => {
+    setLlmTesting(true)
+    setLlmTestMsg('')
+    try {
+      const body: Record<string, string> = {
+        llm_provider: form.llm_provider,
+        llm_model: form.llm_model,
+      }
+      if (form.llm_provider === 'local') {
+        body.llm_base_url = form.llm_base_url
+        if (form.llm_api_key && !form.llm_api_key.includes('••')) body.llm_api_key = form.llm_api_key
+      }
+      if (form.llm_provider === 'openai' && form.openai_api_key && !form.openai_api_key.includes('••')) {
+        body.openai_api_key = form.openai_api_key
+      }
+      if (
+        form.llm_provider === 'anthropic' &&
+        form.anthropic_api_key &&
+        !form.anthropic_api_key.includes('••')
+      ) {
+        body.anthropic_api_key = form.anthropic_api_key
+      }
+      const r = await api.testLlm(body)
+      setLlmTestMsg(
+        r.ok
+          ? `${t('llmConnectionOk')}${r.model ? ` — ${r.model}` : ''}${
+              r.reply ? ` · “${r.reply.slice(0, 80)}”` : ''
+            }`
+          : t('llmConnectionFailed'),
+      )
+    } catch (e) {
+      let err = e instanceof Error ? e.message : t('llmConnectionFailed')
+      try {
+        const parsed = JSON.parse(err) as { detail?: unknown }
+        if (typeof parsed.detail === 'string') err = parsed.detail
+      } catch {
+        /* keep raw */
+      }
+      setLlmTestMsg(err)
+    } finally {
+      setLlmTesting(false)
+    }
+  }
 
   return (
     <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
@@ -390,6 +450,43 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           <p className="mt-2 text-[11px] text-slate-500">{t('appearanceHint')}</p>
         </div>
 
+        <div className="mb-6 border border-line rounded-xl p-4 bg-ink-850">
+          <h2 className="text-sm font-medium text-slate-200 mb-1">{t('consolesSection')}</h2>
+          <p className="text-[11px] text-slate-500 mb-3">{t('consolesSectionHint')}</p>
+          <div className="space-y-2.5">
+            {(
+              [
+                { id: 'a2a' as const, label: t('navA2A'), blurb: t('a2aConsoleBlurb') },
+                { id: 'redteam' as const, label: t('navRedTeam'), blurb: t('rtConsoleBlurb') },
+                { id: 'apitest' as const, label: t('navApiTest'), blurb: t('apiConsoleBlurb') },
+              ] as const
+            ).map((item) => (
+              <label
+                key={item.id}
+                className="flex items-start gap-3 rounded-lg border border-line bg-ink-800 px-3 py-2.5 cursor-pointer hover:border-slate-600"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-[var(--accent)]"
+                  checked={consoles[item.id]}
+                  onChange={(e) => setConsoleEnabled(item.id, e.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm text-slate-200">{item.label}</span>
+                  <span className="block text-[11px] text-slate-500 mt-0.5">{item.blurb}</span>
+                </span>
+                <span
+                  className={`ms-auto text-[11px] font-semibold shrink-0 ${
+                    consoles[item.id] ? 'text-emerald-400' : 'text-slate-500'
+                  }`}
+                >
+                  {consoles[item.id] ? t('consoleEnabled') : t('consoleDisabled')}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
         <fieldset className="block mb-4">
           <legend className="text-xs text-slate-400 block mb-1.5">{t('provider')}</legend>
           <div className="space-y-1.5" role="radiogroup" aria-label="Provider">
@@ -421,14 +518,26 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {field('API key (any non-empty for LM Studio)', 'llm_api_key', 'password', 'lm-studio')}
           </>
         )}
-        {form.llm_provider === 'browser_use' &&
-          field('Browser Use API key', 'browser_use_api_key', 'password', settings?.browser_use_api_key || '')}
         {form.llm_provider === 'openai' &&
           field('OpenAI API key', 'openai_api_key', 'password', settings?.openai_api_key || '')}
         {form.llm_provider === 'anthropic' &&
           field('Anthropic API key', 'anthropic_api_key', 'password', settings?.anthropic_api_key || '')}
 
         {field(t('model'), 'llm_model')}
+
+        <div className="flex flex-wrap gap-2 items-center mb-6">
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50 disabled:opacity-40"
+            disabled={llmTesting}
+            onClick={() => void testLlmConnection()}
+          >
+            {llmTesting ? t('testingConnection') : t('testConnection')}
+          </button>
+          {llmTestMsg && (
+            <span className="text-[11px] text-slate-400 break-all">{llmTestMsg}</span>
+          )}
+        </div>
 
         <div className="mb-6 border-t border-line pt-5">
           <h2 className="text-sm font-medium text-slate-200 mb-3">{t('applicationUrl')}</h2>

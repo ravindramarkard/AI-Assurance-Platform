@@ -181,3 +181,31 @@ def build_llm(cfg: dict[str, Any]):
         api_key=str(cfg.get("llm_api_key") or "lm-studio"),
         base_url=cfg.get("llm_base_url"),
     )
+
+
+async def test_llm_connection(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Send a tiny prompt to verify the configured LLM is reachable."""
+    from browser_use.llm.messages import SystemMessage, UserMessage
+
+    provider = str(cfg.get("llm_provider") or "local")
+    model = str(cfg.get("llm_model") or "local-model")
+    llm = build_llm(cfg)
+    if hasattr(llm, "dont_force_structured_output"):
+        try:
+            llm.dont_force_structured_output = True  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    result = await llm.ainvoke(
+        [
+            SystemMessage(content="Reply with exactly the word: ok"),
+            UserMessage(content="ping"),
+        ]
+    )
+    text = getattr(result, "completion", None) or getattr(result, "content", None) or result
+    reply = str(text or "").strip()
+    return {
+        "ok": True,
+        "provider": provider,
+        "model": model,
+        "reply": reply[:200] if reply else None,
+    }

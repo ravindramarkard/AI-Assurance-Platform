@@ -11,6 +11,7 @@ from . import db
 from .config import settings
 from .queue import start_workers, stop_workers
 from .routes import (
+    api_test,
     browsers,
     files,
     integrations,
@@ -52,6 +53,7 @@ app.include_router(settings_routes.router)
 app.include_router(browsers.router)
 app.include_router(scheduled_jobs.router)
 app.include_router(integrations.router)
+app.include_router(api_test.router)
 
 
 @app.get("/api/health")
@@ -82,6 +84,26 @@ async def session_ws(websocket: WebSocket, session_id: str):
         pass
     finally:
         await bus.unsubscribe(session_id, websocket)
+
+
+@app.websocket("/ws/api-runs/{run_id}")
+async def api_run_ws(websocket: WebSocket, run_id: str):
+    channel = f"api_run:{run_id}"
+    await websocket.accept()
+    await bus.subscribe(channel, websocket)
+    try:
+        events = await db.list_api_run_events(run_id)
+        for ev in events:
+            await websocket.send_json(ev)
+        await websocket.send_json({"type": "ready", "payload": {"run_id": run_id}})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await bus.unsubscribe(channel, websocket)
 
 
 def run() -> None:

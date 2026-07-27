@@ -52,8 +52,17 @@ const THEME_KEY = 'aip_theme'
 const LOCALE_KEY = 'aip_locale'
 const FONT_KEY = 'aip_font'
 const FONT_SIZE_KEY = 'aip_font_size'
+const CONSOLE_A2A_KEY = 'aip_console_a2a'
+const CONSOLE_REDTEAM_KEY = 'aip_console_redteam'
+const CONSOLE_APITEST_KEY = 'aip_console_apitest'
 
 const catalogs: Record<Locale, Record<MessageKey, string>> = { en, ar, hi }
+
+export type ConsoleFeatures = {
+  a2a: boolean
+  redteam: boolean
+  apitest: boolean
+}
 
 type PreferencesContextValue = {
   theme: ThemeMode
@@ -66,6 +75,8 @@ type PreferencesContextValue = {
   setFontSize: (s: UiFontSize) => void
   locale: Locale
   setLocale: (l: Locale) => void
+  consoles: ConsoleFeatures
+  setConsoleEnabled: (id: keyof ConsoleFeatures, enabled: boolean) => void
   t: (key: MessageKey) => string
   dir: 'ltr' | 'rtl'
 }
@@ -114,6 +125,21 @@ function readStoredFontSize(): UiFontSize {
   return 'md'
 }
 
+function readStoredBool(key: string, fallback = true): boolean {
+  const v = localStorage.getItem(key)
+  if (v === '0' || v === 'false') return false
+  if (v === '1' || v === 'true') return true
+  return fallback
+}
+
+function readStoredConsoles(): ConsoleFeatures {
+  return {
+    a2a: readStoredBool(CONSOLE_A2A_KEY, true),
+    redteam: readStoredBool(CONSOLE_REDTEAM_KEY, true),
+    apitest: readStoredBool(CONSOLE_APITEST_KEY, true),
+  }
+}
+
 export function resolveTheme(mode: ThemeMode): ResolvedTheme {
   if (mode === 'system') {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
@@ -155,6 +181,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [fontSize, setFontSizeState] = useState<UiFontSize>(() =>
     typeof window !== 'undefined' ? readStoredFontSize() : 'md',
   )
+  const [consoles, setConsoles] = useState<ConsoleFeatures>(() =>
+    typeof window !== 'undefined'
+      ? readStoredConsoles()
+      : { a2a: true, redteam: true, apitest: true },
+  )
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     typeof window !== 'undefined' ? resolveTheme(readStoredTheme()) : 'dark',
   )
@@ -168,6 +199,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(FONT_KEY, font)
     localStorage.setItem(FONT_SIZE_KEY, fontSize)
   }, [theme, locale, font, fontSize])
+
+  useEffect(() => {
+    localStorage.setItem(CONSOLE_A2A_KEY, consoles.a2a ? '1' : '0')
+    localStorage.setItem(CONSOLE_REDTEAM_KEY, consoles.redteam ? '1' : '0')
+    localStorage.setItem(CONSOLE_APITEST_KEY, consoles.apitest ? '1' : '0')
+  }, [consoles])
 
   useEffect(() => {
     if (theme !== 'system') return
@@ -185,6 +222,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((l: Locale) => setLocaleState(l), [])
   const setFont = useCallback((f: UiFont) => setFontState(f), [])
   const setFontSize = useCallback((s: UiFontSize) => setFontSizeState(s), [])
+  const setConsoleEnabled = useCallback((id: keyof ConsoleFeatures, enabled: boolean) => {
+    setConsoles((prev) => ({ ...prev, [id]: enabled }))
+  }, [])
 
   const t = useCallback(
     (key: MessageKey) => catalogs[locale][key] ?? en[key] ?? key,
@@ -205,6 +245,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setFontSize,
       locale,
       setLocale,
+      consoles,
+      setConsoleEnabled,
       t,
       dir: (locale === 'ar' ? 'rtl' : 'ltr') as 'ltr' | 'rtl',
     }),
@@ -219,6 +261,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setFontSize,
       locale,
       setLocale,
+      consoles,
+      setConsoleEnabled,
       t,
     ],
   )

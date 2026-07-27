@@ -1,12 +1,12 @@
 import type { Event } from './api'
 
-export function connectSessionWs(
-  sessionId: string,
+function connectWs(
+  path: string,
   onEvent: (ev: Event) => void,
   onStatus?: (connected: boolean) => void,
 ): () => void {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${proto}://${window.location.host}/ws/sessions/${sessionId}`
+  const url = `${proto}://${window.location.host}${path}`
   let ws: WebSocket | null = null
   let closed = false
   let pingTimer: number | undefined
@@ -49,4 +49,20 @@ export function connectSessionWs(
     if (retryTimer) window.clearTimeout(retryTimer)
     ws?.close()
   }
+}
+
+export function connectSessionWs(
+  sessionId: string,
+  onEvent: (ev: Event) => void,
+  onStatus?: (connected: boolean) => void,
+): () => void {
+  return connectWs(`/ws/sessions/${sessionId}`, onEvent, onStatus)
+}
+
+export function connectApiRunWs(
+  runId: string,
+  onEvent: (ev: Event) => void,
+  onStatus?: (connected: boolean) => void,
+): () => void {
+  return connectWs(`/ws/api-runs/${runId}`, onEvent, onStatus)
 }

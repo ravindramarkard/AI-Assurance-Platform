@@ -49,7 +49,7 @@ type View =
   | 'settings'
 
 export default function App() {
-  const { t, theme, setTheme, locale, setLocale, resolvedTheme } = usePreferences()
+  const { t, theme, setTheme, locale, setLocale, resolvedTheme, consoles } = usePreferences()
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -187,6 +187,12 @@ export default function App() {
     }, 5000)
     return () => window.clearInterval(timer)
   }, [refreshSessions, refreshScheduledCount, setTheme, setLocale])
+
+  useEffect(() => {
+    if (view === 'a2a' && !consoles.a2a) setView('sessions')
+    else if (view === 'redteam' && !consoles.redteam) setView('sessions')
+    else if (view === 'apitest' && !consoles.apitest) setView('sessions')
+  }, [view, consoles])
 
   const goHome = useCallback(() => {
     setActiveId(null)

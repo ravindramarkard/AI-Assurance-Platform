@@ -12,6 +12,15 @@ A local web app for browser agents: task queue, agent sessions, live step logs, 
 - **Files tab** — session workspace downloads / generated files
 - **Settings** — local LLM (LM Studio / Ollama) or cloud keys (Browser Use / OpenAI / Anthropic); browser engine (Chromium / local Chrome / custom path)
 - **Jira & Confluence** — connect self-hosted Server/Data Center (or Cloud) in Settings, then log issues from chat (`log this to Jira: …`) or the **Log issue** button on a session
+- **API Test Console** — ingest OpenAPI/Swagger, discover OAuth2/`securitySchemes`, generate the full testing spectrum (contract, E2E, edge, negative, security, load), run with variable passing + assertions, schema drift, anomalies, flaky detection, and Allure results under `data/api_test_reports/`
+
+  ```bash
+  # Example: Petstore E2E + Allure-style HTML report
+  cd backend && uv run python scripts/run_petstore_e2e.py
+  open ../data/api_test_reports/latest/index.html
+  # Optional classic Allure UI (requires Java):
+  # npx allure generate ../data/api_test_reports/latest/allure-results -o /tmp/allure --clean && npx allure open /tmp/allure
+  ```
 
 ## Requirements
 
@@ -27,7 +36,7 @@ A local web app for browser agents: task queue, agent sessions, live step logs, 
 ```bash
 cd ~/AgentBrower
 
-# Backend
+# Backend (uv sync installs API Test deps: pyyaml, jsonschema, jsonpath-ng, httpx, …)
 cd backend
 cp .env.example .env          # edit LLM settings
 uv sync --python 3.12
@@ -39,6 +48,8 @@ cd ../frontend
 npm install
 npm run dev
 ```
+
+`./start.sh` always runs `uv sync` so API testing dependencies are loaded at startup/build time.
 
 Open **http://127.0.0.1:5173**
 
