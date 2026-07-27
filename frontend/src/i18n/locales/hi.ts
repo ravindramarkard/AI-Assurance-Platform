@@ -33,7 +33,7 @@ export const hi: Record<MessageKey, string> = {
   navRedTeam: 'रेड टीम',
   navApiTest: 'API परीक्षण',
   brandShort: 'AgentBrowser',
-  navAgentBrowser: 'AI Assurance Platform',
+  navAgentBrowser: 'AgentBrowser',
   agentBrowserConsole: 'AgentBrowser',
   agentBrowserBlurb: 'ब्राउज़र एजेंट और वर्कस्पेस',
   navConfiguration: 'कॉन्फ़िगरेशन',

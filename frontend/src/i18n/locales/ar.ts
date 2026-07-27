@@ -33,7 +33,7 @@ export const ar: Record<MessageKey, string> = {
   navRedTeam: 'الفريق الأحمر',
   navApiTest: 'اختبار API',
   brandShort: 'AgentBrowser',
-  navAgentBrowser: 'AI Assurance Platform',
+  navAgentBrowser: 'AgentBrowser',
   agentBrowserConsole: 'AgentBrowser',
   agentBrowserBlurb: 'وكلاء المتصفح ومساحة العمل',
   navConfiguration: 'الإعدادات',

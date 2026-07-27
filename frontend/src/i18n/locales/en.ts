@@ -31,7 +31,7 @@ export const en = {
   navRedTeam: 'Red Team',
   navApiTest: 'API Test',
   brandShort: 'AgentBrowser',
-  navAgentBrowser: 'AI Assurance Platform',
+  navAgentBrowser: 'AgentBrowser',
   agentBrowserConsole: 'AgentBrowser',
   agentBrowserBlurb: 'Browser agents & workspace',
   navConfiguration: 'Configuration',
