@@ -204,7 +204,6 @@ export default function App() {
     setActiveId(id)
     setView('agentbrowser')
     setAgentBrowserTab('agents')
-    setAgentsPane('list')
     setOpenFilePath(null)
     setRightTab('browser')
     const [s, msgs, evs] = await Promise.all([
@@ -215,17 +214,6 @@ export default function App() {
     setSession(s)
     setMessages(msgs)
     setEvents(evs)
-  }, [])
-
-  const openAgentsList = useCallback(() => {
-    setActiveId(null)
-    setSession(null)
-    setMessages([])
-    setEvents([])
-    setOpenFilePath(null)
-    setView('agentbrowser')
-    setAgentBrowserTab('agents')
-    setAgentsPane('list')
   }, [])
 
   useEffect(() => {
