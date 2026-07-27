@@ -620,6 +620,7 @@ export default function App() {
             onClearHistory={onClearHistory}
             agentsWorkspace={agentsWorkspace}
             settings={settings}
+            onSettingsSaved={(s) => setSettings(s)}
             onOpenSession={(id) => {
               void loadSession(id)
             }}

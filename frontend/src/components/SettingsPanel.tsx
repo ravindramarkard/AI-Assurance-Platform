@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { api, type AppSettings, type BrowserEngine } from '../api'
+import { api, type AppSettings } from '../api'
 import {
   FONT_LABEL_KEYS,
   FONT_OPTIONS,
@@ -27,11 +27,6 @@ type FormState = {
   browser_use_api_key: string
   openai_api_key: string
   anthropic_api_key: string
-  headless: boolean
-  browser_engine: BrowserEngine
-  browser_executable: string
-  application_url: string
-  max_concurrent_agents: number
   atlassian_deployment: 'server' | 'cloud'
   jira_base_url: string
   jira_email: string
@@ -71,11 +66,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     browser_use_api_key: '',
     openai_api_key: '',
     anthropic_api_key: '',
-    headless: true,
-    browser_engine: 'chromium',
-    browser_executable: '',
-    application_url: '',
-    max_concurrent_agents: 2,
     atlassian_deployment: 'server',
     jira_base_url: '',
     jira_email: '',
@@ -101,7 +91,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
 
   useEffect(() => {
     if (!settings) return
-    const engine = (settings.browser_engine || 'chromium') as BrowserEngine
     const provider =
       settings.llm_provider === 'openai' || settings.llm_provider === 'anthropic'
         ? settings.llm_provider
@@ -111,11 +100,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       llm_provider: provider,
       llm_base_url: settings.llm_base_url || f.llm_base_url,
       llm_model: settings.llm_model || f.llm_model,
-      headless: settings.headless,
-      browser_engine: ['chromium', 'chrome', 'custom'].includes(engine) ? engine : 'chromium',
-      browser_executable: settings.browser_executable || '',
-      application_url: settings.application_url || '',
-      max_concurrent_agents: Math.max(1, Math.min(8, Number(settings.max_concurrent_agents) || 2)),
       atlassian_deployment:
         settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
       jira_base_url: settings.jira_base_url || '',
@@ -144,11 +128,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         llm_provider: form.llm_provider,
         llm_base_url: form.llm_base_url,
         llm_model: form.llm_model,
-        headless: form.headless,
-        browser_engine: form.browser_engine,
-        browser_executable: form.browser_executable.trim(),
-        application_url: form.application_url.trim(),
-        max_concurrent_agents: Math.max(1, Math.min(8, Number(form.max_concurrent_agents) || 2)),
         ui_theme: theme,
         ui_locale: locale,
         atlassian_deployment: form.atlassian_deployment,
@@ -188,10 +167,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         jira_api_token: '',
         keycloak_password: '',
         keycloak_client_secret: '',
-        browser_engine: (s.browser_engine as BrowserEngine) || f.browser_engine,
-        browser_executable: s.browser_executable || '',
-        application_url: s.application_url || '',
-        max_concurrent_agents: Math.max(1, Math.min(8, Number(s.max_concurrent_agents) || 2)),
         atlassian_deployment:
           s.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
         jira_base_url: s.jira_base_url || '',
@@ -236,26 +211,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       />
     </label>
   )
-
-  const detected = settings?.detected_browsers
-  const engineStatus = (engine: BrowserEngine): string => {
-    if (engine === 'chromium') {
-      const path = detected?.headless_shell || detected?.chromium
-      return path ? `Found: ${path}` : 'Not found — run: cd backend && uv run browser-use install'
-    }
-    if (engine === 'chrome') {
-      return detected?.chrome
-        ? `Found: ${detected.chrome}`
-        : 'Google Chrome not found in the usual install locations'
-    }
-    return 'Provide the full path to a Chrome/Chromium binary'
-  }
-
-  const engines: { value: BrowserEngine; label: string; detail: string }[] = [
-    { value: 'chromium', label: 'Chromium', detail: 'Playwright / recommended' },
-    { value: 'chrome', label: 'Local Chrome', detail: 'Installed Google Chrome' },
-    { value: 'custom', label: 'Custom path', detail: 'Your own Chrome/Chromium binary' },
-  ]
 
   const providers: { value: string; label: string }[] = [
     { value: 'local', label: 'Local (LM Studio / Ollama)' },
@@ -545,27 +500,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         </div>
 
         <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('applicationUrl')}</h2>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('defaultStartUrl')}</span>
-            <input
-              type="url"
-              value={form.application_url}
-              placeholder="https://duckduckgo.com"
-              onChange={(e) => setForm({ ...form, application_url: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-            />
-          </label>
-          <p className="text-[11px] text-slate-500 mb-1">
-            Used only when the task has no destination (no{' '}
-            <span className="text-slate-400">https://</span> link and no{' '}
-            <span className="text-slate-400">go to google.com</span>-style host). Tasks that name a
-            site open that site directly — Application URL is skipped. Override for a single run with{' '}
-            <span className="text-slate-400">Runtime URL</span> on the home screen.
-          </p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
           <div className="flex items-center justify-between gap-3 mb-2">
             <h2 className="text-sm font-medium text-slate-200">{t('keycloakTitle')}</h2>
             {settings?.keycloak_configured && (
@@ -661,7 +595,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <input
               type="url"
               value={form.keycloak_redirect_uri}
-              placeholder={form.application_url || 'https://app.company.com (optional)'}
+              placeholder={settings?.application_url || 'https://app.company.com (optional)'}
               disabled={!form.keycloak_enabled}
               onChange={(e) => setForm({ ...form, keycloak_redirect_uri: e.target.value })}
               className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
@@ -695,30 +629,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <p className="text-[11px] text-slate-400 mt-2 break-all">{keycloakTestMsg}</p>
           )}
           <p className="text-[10px] text-slate-500 mt-2">{t('keycloakTestHint')}</p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('concurrency')}</h2>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('maxAgents')}</span>
-            <input
-              type="number"
-              min={1}
-              max={8}
-              value={form.max_concurrent_agents}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  max_concurrent_agents: Math.max(1, Math.min(8, Number(e.target.value) || 1)),
-                })
-              }
-              className="w-28 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
-            />
-          </label>
-          <p className="text-[11px] text-slate-500">
-            With 1, a new agent stays <span className="text-slate-400">queued</span> until the current one
-            finishes. Raise to 2+ to run multiple agents in parallel.
-          </p>
         </div>
 
         <div className="mb-6 border-t border-line pt-5">
@@ -868,69 +778,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {testMsg && <span className="text-[11px] text-slate-400 break-all">{testMsg}</span>}
           </div>
           <p className="mt-2 text-[11px] text-slate-500">{t('chatLogHint')}</p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('browser')}</h2>
-
-          <fieldset className="block mb-4">
-            <legend className="text-xs text-slate-400 block mb-1.5">{t('browserEngine')}</legend>
-            <div className="space-y-1.5" role="radiogroup" aria-label={t('browserEngine')}>
-              {engines.map((e) => {
-                const active = form.browser_engine === e.value
-                return (
-                  <button
-                    key={e.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setForm({ ...form, browser_engine: e.value })}
-                    className={`w-full text-left px-3 py-2.5 rounded-md border transition-colors ${
-                      active
-                        ? 'border-bu-500 bg-bu-500/10'
-                        : 'border-line bg-ink-800 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className={`text-sm ${active ? 'text-slate-100' : 'text-slate-300'}`}>
-                      {e.label}
-                      <span className="text-slate-500 font-normal"> — {e.detail}</span>
-                    </div>
-                    {active && (
-                      <div className="mt-1 text-[11px] text-slate-500 break-all">
-                        {engineStatus(e.value)}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          {form.browser_engine === 'custom' && (
-            <label className="block mb-4">
-              <span className="text-xs text-slate-400 block mb-1">Browser executable</span>
-              <input
-                type="text"
-                value={form.browser_executable}
-                placeholder="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-                onChange={(e) => setForm({ ...form, browser_executable: e.target.value })}
-                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-              />
-            </label>
-          )}
-
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={form.headless}
-              onChange={(e) => setForm({ ...form, headless: e.target.checked })}
-            />
-            {t('headless')}
-          </label>
-          <p className="mt-1.5 text-[11px] text-slate-500">
-            Chromium uses headless-shell when available. Local Chrome / custom use{' '}
-            <code className="text-slate-400">--headless=new</code>.
-          </p>
         </div>
 
         <button

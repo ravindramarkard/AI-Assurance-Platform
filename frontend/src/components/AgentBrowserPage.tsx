@@ -5,8 +5,9 @@ import AgentsHistoryRail from './AgentsHistoryRail'
 import BrowsersView from './BrowsersView'
 import AnalyticsView from './AnalyticsView'
 import ScheduledJobsPage from './ScheduledJobsPage'
+import AgentBrowserConfiguration from './AgentBrowserConfiguration'
 
-export type AgentBrowserTab = 'agents' | 'browsers' | 'scheduled' | 'analytics'
+export type AgentBrowserTab = 'agents' | 'browsers' | 'scheduled' | 'analytics' | 'configuration'
 
 export type AgentBrowserPageProps = {
   tab: AgentBrowserTab
@@ -20,6 +21,7 @@ export type AgentBrowserPageProps = {
   onClearHistory: () => void
   agentsWorkspace: ReactNode
   settings: AppSettings | null
+  onSettingsSaved: (s: AppSettings) => void
   onOpenSession: (id: string) => void
 }
 
@@ -61,6 +63,18 @@ function IconAnalytics({ className = 'w-4 h-4' }: { className?: string }) {
   )
 }
 
+function IconConfig({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export default function AgentBrowserPage({
   tab,
   onTabChange,
@@ -73,6 +87,7 @@ export default function AgentBrowserPage({
   onClearHistory,
   agentsWorkspace,
   settings,
+  onSettingsSaved,
   onOpenSession,
 }: AgentBrowserPageProps) {
   const { t } = usePreferences()
@@ -87,6 +102,7 @@ export default function AgentBrowserPage({
       badge: scheduledCount > 0 ? String(scheduledCount) : null,
     },
     { id: 'analytics', label: t('navAnalytics'), icon: <IconAnalytics /> },
+    { id: 'configuration', label: t('navConfiguration'), icon: <IconConfig /> },
   ]
 
   return (
@@ -143,6 +159,9 @@ export default function AgentBrowserPage({
           />
         )}
         {tab === 'analytics' && <AnalyticsView sessions={sessions} />}
+        {tab === 'configuration' && (
+          <AgentBrowserConfiguration settings={settings} onSaved={onSettingsSaved} />
+        )}
       </div>
     </main>
   )
