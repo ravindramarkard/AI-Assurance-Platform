@@ -93,14 +93,18 @@ export default function Sidebar({
     onClick: () => void
     active: boolean
   }[] = [
-    {
-      id: 'agentbrowser',
-      label: t('navAgentBrowser'),
-      title: t('agentBrowserConsole'),
-      icon: <IconAgents />,
-      onClick: () => onView('agentbrowser'),
-      active: view === 'agentbrowser',
-    },
+    ...(consoles.agentbrowser
+      ? [
+          {
+            id: 'agentbrowser' as const,
+            label: t('navAgentBrowser'),
+            title: t('agentBrowserConsole'),
+            icon: <IconAgents />,
+            onClick: () => onView('agentbrowser'),
+            active: view === 'agentbrowser',
+          },
+        ]
+      : []),
     ...(consoles.a2a
       ? [
           {
@@ -196,7 +200,7 @@ export default function Sidebar({
           AI
         </div>
         <span className="font-semibold text-[14px] text-slate-100 truncate flex-1 min-w-0">
-          {t('brandShort')}
+          {t('brand')}
         </span>
         <button
           type="button"

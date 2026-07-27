@@ -183,9 +183,14 @@ export default function App() {
   }, [refreshSessions, refreshScheduledCount, setTheme, setLocale])
 
   useEffect(() => {
-    if (view === 'a2a' && !consoles.a2a) setView('agentbrowser')
-    else if (view === 'redteam' && !consoles.redteam) setView('agentbrowser')
-    else if (view === 'apitest' && !consoles.apitest) setView('agentbrowser')
+    if (view === 'agentbrowser' && !consoles.agentbrowser) setView('settings')
+    else if (view === 'a2a' && !consoles.a2a) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    } else if (view === 'redteam' && !consoles.redteam) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    } else if (view === 'apitest' && !consoles.apitest) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    }
   }, [view, consoles])
 
   const goHome = useCallback(() => {
@@ -487,27 +492,15 @@ export default function App() {
   return (
     <div className="bg-ink-950 text-slate-200 h-screen overflow-hidden flex flex-col">
       <header className="h-12 bg-ink-900 border-b border-line flex items-center px-4 justify-between text-[13px] flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={goHome}
-            className="flex items-center gap-2 hover:opacity-90"
-            title="New agent"
-          >
-            <div className="w-7 h-7 rounded-lg accent-fill font-bold text-xs flex items-center justify-center">
-              AI
-            </div>
-            <span className="font-semibold text-[13px]">{t('brand')}</span>
-          </button>
-          <span className="text-slate-600">/</span>
-          <span className="text-slate-400">{t('local')}</span>
-          {activeId && showWorkspace && (
+        <div className="flex items-center gap-3 min-w-0">
+          {activeId && showWorkspace ? (
             <>
-              <span className="text-slate-600">/</span>
               <span className="text-slate-400">session</span>
               <span className="text-slate-600">/</span>
               <span className="mono text-xs text-slate-300">{activeId.slice(0, 8)}…</span>
             </>
+          ) : (
+            <span className="text-slate-500">{t('local')}</span>
           )}
         </div>
         <div className="flex items-center gap-2 text-[12px] text-slate-400">
