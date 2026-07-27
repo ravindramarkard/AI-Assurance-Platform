@@ -12,6 +12,7 @@ type Props = {
   sessions?: Session[]
   messages: Message[]
   events: Event[]
+  llmReady?: boolean | null
   onSend: (content: string) => Promise<void>
   onControl: (action: 'pause' | 'resume' | 'stop') => void
   /** Delete current session and leave the workspace */
@@ -309,6 +310,7 @@ export default function ChatPanel({
   sessions = [],
   messages,
   events,
+  llmReady = true,
   onSend,
   onControl,
   onClearSession,
@@ -317,6 +319,7 @@ export default function ChatPanel({
   onOpenScheduled,
 }: Props) {
   const { t } = usePreferences()
+  const canSend = llmReady === true
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [voiceErr, setVoiceErr] = useState('')
@@ -525,7 +528,7 @@ export default function ChatPanel({
 
   const send = async (raw?: string) => {
     const content = (raw ?? text).trim()
-    if (!content || !session || sending) return
+    if (!content || !session || sending || !canSend) return
     setSending(true)
     setText('')
     setDismissedFollowUps(true)
@@ -989,7 +992,7 @@ export default function ChatPanel({
                 <button
                   key={prompt}
                   type="button"
-                  disabled={sending}
+                  disabled={sending || !canSend}
                   onClick={() => void send(prompt)}
                   className="text-left text-[12px] leading-snug px-2.5 py-1.5 rounded-lg border border-line bg-ink-900 hover:border-bu-500/50 hover:bg-bu-500/10 text-slate-300 transition-colors max-w-full"
                 >
@@ -1019,10 +1022,16 @@ export default function ChatPanel({
             </button>
           </div>
         )}
+        {llmReady === false && (
+          <div className="rounded-xl border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-[12px] text-amber-200">
+            {t('modelNotConnected')}
+          </div>
+        )}
         <div className="bg-ink-800 border border-line rounded-2xl p-3 flex items-end gap-2">
           <textarea
             rows={1}
             value={text}
+            disabled={!canSend}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -1030,8 +1039,10 @@ export default function ChatPanel({
                 void send()
               }
             }}
-            placeholder={t('replyPlaceholder')}
-            className="flex-1 bg-transparent text-[14px] leading-[1.5] text-slate-200 placeholder-slate-500 resize-none outline-none"
+            placeholder={
+              llmReady === false ? t('modelNotConnected') : t('replyPlaceholder')
+            }
+            className="flex-1 bg-transparent text-[14px] leading-[1.5] text-slate-200 placeholder-slate-500 resize-none outline-none disabled:cursor-not-allowed"
           />
           {text.trim() && (
             <button
@@ -1049,15 +1060,17 @@ export default function ChatPanel({
               setVoiceErr('')
               setText(next)
             }}
-            disabled={sending || thinking}
+            disabled={sending || thinking || !canSend}
             onError={setVoiceErr}
           />
           <button
             type="button"
             onClick={() => void send()}
-            disabled={sending || !text.trim() || thinking}
+            disabled={sending || !text.trim() || thinking || !canSend}
             className="accent-fill disabled:opacity-40 p-2 rounded-lg"
-            title={thinking ? t('thinking') : undefined}
+            title={
+              !canSend ? t('modelNotConnected') : thinking ? t('thinking') : undefined
+            }
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M12 19V5M5 12l7-7 7 7" />

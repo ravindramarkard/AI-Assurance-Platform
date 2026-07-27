@@ -53,6 +53,8 @@ export default function App() {
   const [wsConnected, setWsConnected] = useState(false)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [apiOk, setApiOk] = useState(false)
+  /** null = probing, true = reachable, false = not configured/connected */
+  const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
   const [rightTab, setRightTab] = useState<'browser' | 'files' | 'logs'>('browser')
   const [scheduledCount, setScheduledCount] = useState(0)
@@ -160,6 +162,21 @@ export default function App() {
     }
   }, [])
 
+  const probeLlm = useCallback(async (cfg: AppSettings | null) => {
+    const model = (cfg?.llm_model || '').trim()
+    if (!model) {
+      setLlmReady(false)
+      return
+    }
+    setLlmReady(null)
+    try {
+      const r = await api.testLlm()
+      setLlmReady(!!r.ok)
+    } catch {
+      setLlmReady(false)
+    }
+  }, [])
+
   useEffect(() => {
     refreshSessions()
     refreshScheduledCount()
@@ -173,14 +190,17 @@ export default function App() {
         if (s.ui_locale === 'en' || s.ui_locale === 'ar' || s.ui_locale === 'hi') {
           setLocale(s.ui_locale)
         }
+        void probeLlm(s)
       })
-      .catch(() => {})
+      .catch(() => {
+        setLlmReady(false)
+      })
     const timer = window.setInterval(() => {
       refreshSessions()
       refreshScheduledCount()
     }, 5000)
     return () => window.clearInterval(timer)
-  }, [refreshSessions, refreshScheduledCount, setTheme, setLocale])
+  }, [refreshSessions, refreshScheduledCount, setTheme, setLocale, probeLlm])
 
   useEffect(() => {
     if (view === 'agentbrowser' && !consoles.agentbrowser) setView('settings')
@@ -346,6 +366,9 @@ export default function App() {
   }, [hadBrowserActivity, events, session, messages])
 
   const onCreate = async (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
+    if (llmReady !== true) {
+      throw new Error(t('modelNotConnected'))
+    }
     const s = await api.createSession(task, model, files, runtimeUrl)
     await refreshSessions()
     await loadSession(s.id)
@@ -359,6 +382,10 @@ export default function App() {
 
   const onSend = async (content: string) => {
     if (!activeId) return
+    if (llmReady !== true) {
+      window.alert(t('modelNotConnected'))
+      return
+    }
     setMessages((prev) => [
       ...prev,
       {
@@ -408,6 +435,7 @@ export default function App() {
         sessions={sessions}
         messages={messages}
         events={events}
+        llmReady={llmReady}
         onSend={onSend}
         onControl={(action) => {
           if (!activeId) return
@@ -474,6 +502,7 @@ export default function App() {
   ) : showCreate ? (
     <AgentPage
       settings={settings}
+      llmReady={llmReady}
       onCreate={onCreate}
       onOpenSettings={() => setView('settings')}
     />
@@ -575,7 +604,13 @@ export default function App() {
         )}
 
         {view === 'settings' ? (
-          <SettingsPanel settings={settings} onSaved={(s) => setSettings(s)} />
+          <SettingsPanel
+            settings={settings}
+            onSaved={(s) => {
+              setSettings(s)
+              void probeLlm(s)
+            }}
+          />
         ) : view === 'a2a' ? (
           <A2AConsolePage
             sessions={sessions}
@@ -602,9 +637,13 @@ export default function App() {
             scheduledCount={scheduledCount}
             sessions={sessions}
             onNew={goHome}
+            llmReady={llmReady}
             agentsWorkspace={agentsWorkspace}
             settings={settings}
-            onSettingsSaved={(s) => setSettings(s)}
+            onSettingsSaved={(s) => {
+              setSettings(s)
+              void probeLlm(s)
+            }}
             onOpenSession={(id) => {
               void loadSession(id)
             }}

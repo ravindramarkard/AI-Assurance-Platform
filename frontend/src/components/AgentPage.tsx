@@ -5,6 +5,7 @@ import VoiceInputButton from './VoiceInputButton'
 
 type Props = {
   settings: AppSettings | null
+  llmReady?: boolean | null
   onCreate: (task: string, model?: string, files?: File[], runtimeUrl?: string) => Promise<void>
   onOpenSettings: () => void
 }
@@ -39,8 +40,9 @@ function IconInfo({ className = 'w-4 h-4' }: { className?: string }) {
   )
 }
 
-export default function AgentPage({ settings, onCreate, onOpenSettings }: Props) {
+export default function AgentPage({ settings, llmReady = true, onCreate, onOpenSettings }: Props) {
   const { t } = usePreferences()
+  const canSubmit = llmReady === true
   const [task, setTask] = useState('')
   const [runtimeUrl, setRuntimeUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -115,7 +117,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
   }
 
   const submit = async () => {
-    if (!task.trim() || busy) return
+    if (!task.trim() || busy || !canSubmit) return
     setBusy(true)
     setErr('')
     try {
@@ -155,11 +157,28 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
           <p className="text-[14px] text-slate-500 mt-1.5" style={{ color: 'var(--fg-muted)' }}>
             {t('localBrowserAgent')} · {provider}
           </p>
+          {llmReady === false && (
+            <div className="mt-3 max-w-md text-center rounded-xl border border-amber-700/50 bg-amber-950/40 px-4 py-2.5 text-[13px] text-amber-200">
+              <p className="font-medium">{t('modelNotConnected')}</p>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="mt-1.5 text-[12px] text-bu-400 hover:underline"
+              >
+                {t('openSettingsToConfigure')}
+              </button>
+            </div>
+          )}
+          {llmReady === null && (
+            <p className="mt-3 text-[13px] text-slate-500">{t('modelChecking')}</p>
+          )}
         </div>
 
         <div className="w-full">
           <div
-            className="bg-ink-850 border border-line rounded-2xl shadow-2xl focus-within:border-bu-500/40 transition-colors"
+            className={`bg-ink-850 border border-line rounded-2xl shadow-2xl focus-within:border-bu-500/40 transition-colors ${
+              !canSubmit ? 'opacity-60 pointer-events-none' : ''
+            }`}
             onDragOver={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -167,6 +186,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
             onDrop={(e) => {
               e.preventDefault()
               e.stopPropagation()
+              if (!canSubmit) return
               if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files)
             }}
           >
@@ -175,6 +195,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                 ref={taRef}
                 rows={3}
                 value={task}
+                disabled={!canSubmit}
                 onChange={(e) => setTask(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -183,7 +204,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                   }
                 }}
                 placeholder={task ? t('taskPlaceholder') : livePlaceholder}
-                className="flex-1 bg-transparent px-2.5 pt-1.5 pb-2 text-[15px] leading-[1.55] text-slate-100 placeholder-slate-500 resize-none outline-none min-h-[112px]"
+                className="flex-1 bg-transparent px-2.5 pt-1.5 pb-2 text-[15px] leading-[1.55] text-slate-100 placeholder-slate-500 resize-none outline-none min-h-[112px] disabled:cursor-not-allowed"
               />
               <div className="relative flex-shrink-0" ref={infoRef}>
                 <button
@@ -368,7 +389,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
               <button
                 type="button"
                 onClick={() => void submit()}
-                disabled={busy || !task.trim()}
+                disabled={busy || !task.trim() || !canSubmit}
                 className="w-11 h-11 rounded-full accent-fill accent-shadow flex items-center justify-center"
                 title="Start agent"
               >

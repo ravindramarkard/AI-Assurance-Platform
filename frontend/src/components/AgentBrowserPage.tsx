@@ -14,6 +14,7 @@ export type AgentBrowserPageProps = {
   scheduledCount: number
   sessions: Session[]
   onNew: () => void
+  llmReady?: boolean | null
   agentsWorkspace: ReactNode
   settings: AppSettings | null
   onSettingsSaved: (s: AppSettings) => void
@@ -76,12 +77,14 @@ export default function AgentBrowserPage({
   scheduledCount,
   sessions,
   onNew,
+  llmReady = true,
   agentsWorkspace,
   settings,
   onSettingsSaved,
   onOpenSession,
 }: AgentBrowserPageProps) {
   const { t } = usePreferences()
+  const canStart = llmReady === true
 
   const nav: { id: AgentBrowserTab; label: string; icon: ReactNode; badge?: string | null }[] = [
     { id: 'agents', label: t('agentSessions'), icon: <IconAgents /> },
@@ -107,11 +110,19 @@ export default function AgentBrowserPage({
           <button
             type="button"
             onClick={onNew}
-            className="mt-3 w-full accent-fill accent-shadow text-[13px] font-semibold py-2 rounded-lg flex items-center justify-center gap-2"
+            disabled={!canStart}
+            title={!canStart ? t('modelNotConnected') : undefined}
+            className="mt-3 w-full accent-fill accent-shadow text-[13px] font-semibold py-2 rounded-lg flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <span className="text-base leading-none">+</span>
             <span>{t('newAgent')}</span>
           </button>
+          {llmReady === false && (
+            <p className="mt-2 text-[11px] text-amber-400/90 leading-snug">{t('modelNotConnected')}</p>
+          )}
+          {llmReady === null && (
+            <p className="mt-2 text-[11px] text-slate-500 leading-snug">{t('modelChecking')}</p>
+          )}
         </div>
         <nav className="p-2 space-y-0.5 text-[13px]">
           {nav.map((item) => (
