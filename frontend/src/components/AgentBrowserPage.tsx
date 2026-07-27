@@ -1,7 +1,6 @@
 import { type ReactNode } from 'react'
 import type { AppSettings, Session } from '../api'
 import { usePreferences } from '../preferences'
-import AgentsHistoryRail from './AgentsHistoryRail'
 import BrowsersView from './BrowsersView'
 import AnalyticsView from './AnalyticsView'
 import ScheduledJobsPage from './ScheduledJobsPage'
@@ -14,11 +13,7 @@ export type AgentBrowserPageProps = {
   onTabChange: (tab: AgentBrowserTab) => void
   scheduledCount: number
   sessions: Session[]
-  activeId: string | null
   onNew: () => void
-  onSelect: (id: string) => void
-  onDelete: (id: string) => void
-  onClearHistory: () => void
   agentsWorkspace: ReactNode
   settings: AppSettings | null
   onSettingsSaved: (s: AppSettings) => void
@@ -80,11 +75,7 @@ export default function AgentBrowserPage({
   onTabChange,
   scheduledCount,
   sessions,
-  activeId,
   onNew,
-  onSelect,
-  onDelete,
-  onClearHistory,
   agentsWorkspace,
   settings,
   onSettingsSaved,
@@ -113,6 +104,14 @@ export default function AgentBrowserPage({
             {t('agentBrowserConsole')}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">{t('agentBrowserBlurb')}</div>
+          <button
+            type="button"
+            onClick={onNew}
+            className="mt-3 w-full accent-fill accent-shadow text-[13px] font-semibold py-2 rounded-lg flex items-center justify-center gap-2"
+          >
+            <span className="text-base leading-none">+</span>
+            <span>{t('newAgent')}</span>
+          </button>
         </div>
         <nav className="p-2 space-y-0.5 text-[13px]">
           {nav.map((item) => (
@@ -138,17 +137,7 @@ export default function AgentBrowserPage({
 
       <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {tab === 'agents' && (
-          <div className="flex flex-1 min-h-0 min-w-0">
-            <AgentsHistoryRail
-              sessions={sessions}
-              activeId={activeId}
-              onNew={onNew}
-              onSelect={onSelect}
-              onDelete={onDelete}
-              onClearHistory={onClearHistory}
-            />
-            <div className="flex-1 min-w-0 min-h-0 flex">{agentsWorkspace}</div>
-          </div>
+          <div className="flex flex-1 min-h-0 min-w-0">{agentsWorkspace}</div>
         )}
         {tab === 'browsers' && <BrowsersView />}
         {tab === 'scheduled' && (

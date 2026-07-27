@@ -382,16 +382,6 @@ export default function App() {
     }
   }
 
-  const onClearHistory = async () => {
-    try {
-      await api.clearHistory()
-      goHome()
-      await refreshSessions()
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Clear failed')
-    }
-  }
-
   const inAgentBrowser = view === 'agentbrowser'
   const showWorkspace = inAgentBrowser && agentBrowserTab === 'agents' && !!activeId
   const showSessionsList =
@@ -611,13 +601,7 @@ export default function App() {
             }}
             scheduledCount={scheduledCount}
             sessions={sessions}
-            activeId={showWorkspace ? activeId : null}
             onNew={goHome}
-            onSelect={(id) => {
-              void loadSession(id)
-            }}
-            onDelete={onDeleteSession}
-            onClearHistory={onClearHistory}
             agentsWorkspace={agentsWorkspace}
             settings={settings}
             onSettingsSaved={(s) => setSettings(s)}
