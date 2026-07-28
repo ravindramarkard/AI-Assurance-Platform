@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type AppSettings, type Event, type Message, type Session } from './api'
+import { api, type AppSettings, type Event, type LlmProvider, type Message, type Session } from './api'
 import { looksLikeGeneralChat } from './chatGate'
 import {
   THEME_OPTIONS,
@@ -21,6 +21,7 @@ import AgentSessionsPage from './components/AgentSessionsPage'
 import A2AConsolePage from './components/A2AConsolePage'
 import RedTeamConsolePage from './components/RedTeamConsolePage'
 import ApiTestConsolePage from './components/ApiTestConsolePage'
+import ModelPicker from './components/ModelPicker'
 
 const RIGHT_PANEL_MIN = 320
 const RIGHT_PANEL_DEFAULT = 560
@@ -66,8 +67,10 @@ export default function App() {
       return false
     }
   })
+  const [sidebarPeek, setSidebarPeek] = useState(false)
 
   const toggleSidebar = useCallback(() => {
+    setSidebarPeek(false)
     setSidebarCollapsed((v) => {
       const next = !v
       try {
@@ -77,6 +80,16 @@ export default function App() {
       }
       return next
     })
+  }, [])
+
+  const hideSidebar = useCallback(() => {
+    setSidebarPeek(false)
+    setSidebarCollapsed(true)
+    try {
+      localStorage.setItem('aip_sidebar_collapsed', '1')
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -365,11 +378,17 @@ export default function App() {
     return true
   }, [hadBrowserActivity, events, session, messages])
 
-  const onCreate = async (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
+  const onCreate = async (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    llmProvider?: string,
+  ) => {
     if (llmReady !== true) {
       throw new Error(t('modelNotConnected'))
     }
-    const s = await api.createSession(task, model, files, runtimeUrl)
+    const s = await api.createSession(task, model, files, runtimeUrl, llmProvider)
     await refreshSessions()
     await loadSession(s.id)
     if (files && files.length > 0) {
@@ -512,15 +531,31 @@ export default function App() {
     <div className="bg-ink-950 text-slate-200 h-screen overflow-hidden flex flex-col">
       <header className="h-12 bg-ink-900 border-b border-line flex items-center px-4 justify-between text-[13px] flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
+          <div className="w-7 h-7 rounded-lg accent-fill font-bold text-xs flex items-center justify-center flex-shrink-0">
+            AI
+          </div>
+          <span className="font-semibold text-[14px] text-slate-100 truncate">
+            {t('brand')}
+          </span>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? t('showSidebar') : t('hideSidebar')}
+            className="w-8 h-8 rounded-md text-slate-400 hover:text-slate-200 hover:bg-ink-800 flex items-center justify-center flex-shrink-0"
+            aria-label={sidebarCollapsed ? t('showSidebar') : t('hideSidebar')}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg>
+          </button>
           {activeId && showWorkspace ? (
             <>
-              <span className="text-slate-400">session</span>
               <span className="text-slate-600">/</span>
+              <span className="text-slate-400">session</span>
               <span className="mono text-xs text-slate-300">{activeId.slice(0, 8)}…</span>
             </>
-          ) : (
-            <span className="text-slate-500">{t('local')}</span>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center gap-2 text-[12px] text-slate-400">
           <select
@@ -568,9 +603,25 @@ export default function App() {
             </span>
           </div>
           <span className="text-slate-600">|</span>
-          <span>{settings?.llm_provider || '—'}</span>
-          <span className="text-slate-600">|</span>
-          <span className="truncate max-w-[140px]">{settings?.llm_model || 'model'}</span>
+          <ModelPicker
+            compact
+            catalog={settings?.llm_models}
+            value={{
+              provider: (['local', 'openai', 'anthropic'].includes(settings?.llm_provider || '')
+                ? settings!.llm_provider
+                : 'local') as LlmProvider,
+              model: settings?.llm_model || '',
+            }}
+            onChange={async (next) => {
+              const s = await api.updateSettings({
+                llm_provider: next.provider,
+                llm_model: next.model,
+              })
+              setSettings(s)
+              void probeLlm(s)
+            }}
+            onManageSettings={() => setView('settings')}
+          />
         </div>
       </header>
 
@@ -580,16 +631,17 @@ export default function App() {
           onView={(v: SidebarView) => {
             if (v === 'agentbrowser') {
               setView('agentbrowser')
-              // keep last agentBrowserTab (in-memory persistence)
-              return
+            } else {
+              setView(v)
             }
-            setView(v)
+            hideSidebar()
           }}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebar}
+          peek={sidebarPeek}
+          onPeekChange={setSidebarPeek}
           width={sidebarWidth}
         />
-        {!sidebarCollapsed && (
+        {!sidebarCollapsed && !sidebarPeek && (
           <PanelResizeHandle
             edge="end"
             label="Resize sidebar"
