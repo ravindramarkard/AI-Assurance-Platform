@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
 from . import db
 from .config import settings
+from .llm_models_catalog import (
+    empty_catalog,
+    ensure_model_in_catalog,
+    normalize_catalog,
+    parse_catalog_json,
+)
 
 
 async def effective_settings() -> dict[str, Any]:
@@ -51,6 +58,19 @@ async def effective_settings() -> dict[str, Any]:
                 pass
         else:
             out[k] = v
+    raw_models = stored.get("llm_models")
+    if raw_models is None:
+        catalog = empty_catalog()
+        migrated = True
+    else:
+        catalog = parse_catalog_json(raw_models)
+        migrated = False
+    provider = str(out.get("llm_provider") or "local")
+    model = str(out.get("llm_model") or "")
+    if migrated and model.strip():
+        catalog = ensure_model_in_catalog(catalog, provider, model)
+        await db.set_setting("llm_models", json.dumps(catalog))
+    out["llm_models"] = catalog
     return out
 
 
@@ -71,6 +91,7 @@ async def public_settings() -> dict[str, Any]:
         "llm_provider": s["llm_provider"],
         "llm_base_url": s["llm_base_url"],
         "llm_model": s["llm_model"],
+        "llm_models": normalize_catalog(s.get("llm_models")),
         "llm_api_key": _mask(s.get("llm_api_key")),
         "browser_use_api_key": _mask(s.get("browser_use_api_key")),
         "openai_api_key": _mask(s.get("openai_api_key")),

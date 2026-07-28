@@ -25,6 +25,7 @@ class SettingsUpdate(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
+    llm_models: dict[str, list[str]] | None = None
     browser_use_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
