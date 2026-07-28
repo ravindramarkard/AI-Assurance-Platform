@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import { usePreferences } from '../preferences'
 
 export type SidebarView =
@@ -12,7 +12,9 @@ type Props = {
   view: SidebarView
   onView: (v: SidebarView) => void
   collapsed: boolean
-  onToggleCollapse: () => void
+  /** Temporary expand while hovering the collapsed edge */
+  peek: boolean
+  onPeekChange: (peek: boolean) => void
   /** Expanded sidebar width in px (ignored when collapsed). */
   width?: number
 }
@@ -67,23 +69,46 @@ function IconSettings({ className = 'w-4 h-4' }: { className?: string }) {
   )
 }
 
-function IconPanel({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M9 4v16" />
-    </svg>
-  )
-}
-
 export default function Sidebar({
   view,
   onView,
   collapsed,
-  onToggleCollapse,
+  peek,
+  onPeekChange,
   width = 240,
 }: Props) {
   const { t, consoles } = usePreferences()
+  const leaveTimer = useRef<number | null>(null)
+
+  const showPanel = !collapsed || peek
+
+  useEffect(() => {
+    return () => {
+      if (leaveTimer.current != null) window.clearTimeout(leaveTimer.current)
+    }
+  }, [])
+
+  const clearLeaveTimer = () => {
+    if (leaveTimer.current != null) {
+      window.clearTimeout(leaveTimer.current)
+      leaveTimer.current = null
+    }
+  }
+
+  const selectView = (v: SidebarView) => {
+    onView(v)
+  }
+
+  const onRailEnter = () => {
+    clearLeaveTimer()
+    if (collapsed) onPeekChange(true)
+  }
+
+  const onPanelLeave = () => {
+    if (!collapsed) return
+    clearLeaveTimer()
+    leaveTimer.current = window.setTimeout(() => onPeekChange(false), 160)
+  }
 
   const nav: {
     id: SidebarView
@@ -100,7 +125,7 @@ export default function Sidebar({
             label: t('navAgentBrowser'),
             title: t('agentBrowserConsole'),
             icon: <IconAgents />,
-            onClick: () => onView('agentbrowser'),
+            onClick: () => selectView('agentbrowser'),
             active: view === 'agentbrowser',
           },
         ]
@@ -112,7 +137,7 @@ export default function Sidebar({
             label: t('navA2A'),
             title: t('a2aConsole'),
             icon: <IconA2A />,
-            onClick: () => onView('a2a'),
+            onClick: () => selectView('a2a'),
             active: view === 'a2a',
           },
         ]
@@ -124,7 +149,7 @@ export default function Sidebar({
             label: t('navRedTeam'),
             title: t('rtConsole'),
             icon: <IconRedTeam />,
-            onClick: () => onView('redteam'),
+            onClick: () => selectView('redteam'),
             active: view === 'redteam',
           },
         ]
@@ -136,83 +161,37 @@ export default function Sidebar({
             label: t('navApiTest'),
             title: t('apiConsole'),
             icon: <IconApiTest />,
-            onClick: () => onView('apitest'),
+            onClick: () => selectView('apitest'),
             active: view === 'apitest',
           },
         ]
       : []),
   ]
 
-  /* ——— Collapsed icon rail (matches Browser Use) ——— */
-  if (collapsed) {
+  /* Collapsed: thin hover edge — page stays 2-panel (secondary + main) */
+  if (!showPanel) {
     return (
-      <aside className="w-[56px] bg-ink-900 border-r border-line flex flex-col items-center py-3 gap-1 flex-shrink-0">
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          title={t('showSidebar')}
-          className="w-9 h-9 rounded-xl accent-fill accent-shadow font-extrabold text-[11px] flex items-center justify-center mb-2"
-        >
-          AI
-        </button>
-        <div className="w-7 border-t border-line my-2" />
-        {nav.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            title={item.title}
-            onClick={item.onClick}
-            className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
-              item.active
-                ? 'bg-bu-500/15 text-bu-400'
-                : 'text-slate-400 hover:bg-ink-800 hover:text-slate-200'
-            }`}
-          >
-            {item.icon}
-          </button>
-        ))}
-        <div className="flex-1" />
-        <button
-          type="button"
-          title={t('settings')}
-          onClick={() => onView('settings')}
-          className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-            view === 'settings'
-              ? 'bg-bu-500/15 text-bu-400'
-              : 'text-slate-400 hover:bg-ink-800 hover:text-slate-200'
-          }`}
-        >
-          <IconSettings />
-        </button>
-      </aside>
+      <aside
+        className="w-2 flex-shrink-0 self-stretch bg-ink-900/80 border-r border-line hover:bg-bu-500/30 cursor-pointer transition-colors"
+        title={t('showSidebar')}
+        onMouseEnter={onRailEnter}
+        onFocus={onRailEnter}
+        aria-label={t('showSidebar')}
+      />
     )
   }
 
-  /* ——— Expanded sidebar ——— */
+  /* Expanded in layout flow: 1st + 2nd + 3rd panels share the page */
   return (
     <aside
-      className="bg-ink-900 border-r border-line flex flex-col text-base flex-shrink-0 min-w-0"
+      className="bg-ink-900 border-r border-line flex flex-col text-base flex-shrink-0 min-w-0 self-stretch"
       style={{ width }}
+      onMouseEnter={() => {
+        clearLeaveTimer()
+        if (collapsed) onPeekChange(true)
+      }}
+      onMouseLeave={onPanelLeave}
     >
-      {/* Brand + collapse (like Browser Use header) */}
-      <div className="h-12 px-3 flex items-center gap-2 border-b border-line flex-shrink-0">
-        <div className="w-7 h-7 rounded-lg accent-fill font-bold text-xs flex items-center justify-center flex-shrink-0">
-          AI
-        </div>
-        <span className="font-semibold text-[14px] text-slate-100 truncate flex-1 min-w-0">
-          {t('brand')}
-        </span>
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          title={t('hideSidebar')}
-          className="w-8 h-8 rounded-md text-slate-400 hover:text-slate-200 hover:bg-ink-800 flex items-center justify-center flex-shrink-0"
-          aria-label={t('hideSidebar')}
-        >
-          <IconPanel />
-        </button>
-      </div>
-
       <nav className="px-2 pt-3 space-y-0.5 flex-shrink-0 text-[14px]">
         {nav.map((item) => (
           <button
@@ -229,7 +208,7 @@ export default function Sidebar({
         ))}
         <button
           type="button"
-          onClick={() => onView('settings')}
+          onClick={() => selectView('settings')}
           className={`relative w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors font-medium ${
             view === 'settings' ? 'active-nav bg-bu-500/10 text-bu-400' : 'text-slate-300 hover:bg-ink-800'
           }`}

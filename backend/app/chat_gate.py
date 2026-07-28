@@ -305,30 +305,28 @@ def general_chat_reply(task: str, *, application_url: str | None = None) -> str:
     app = (application_url or "").strip()
     url_bit = f" ({app})" if app else ""
     can_load = (
-        f"I open the browser only for web tasks — a URL you name, or the Application URL{url_bit} "
-        "when you ask to get/show/search something online. Attached files are read locally."
+        f"I am ready to assist with browser automation. Share a URL to open, or ask me to retrieve, "
+        f"display, or search online content using the Application URL{url_bit}. "
+        "Attached files are analyzed locally without launching a browser."
     )
 
     if re.match(r"^(thanks|thank you|thx|ty)\b", text):
         return f"You're welcome. {can_load}"
     if re.match(r"^(ok|okay|cool|great|nice|got it)\b", text):
-        return f"Ready. {can_load}"
+        return f"Understood. {can_load}"
     if _GREETING.match(text):
-        if re.match(r"^hi\b", text):
-            return f"Hello. {can_load}"
-        if re.match(r"^hey\b", text):
-            return f"Hey. {can_load}"
         return f"Hello. {can_load}"
     if _CAPABILITY.search(text):
         return (
-            "I run browser tasks when you need the web — navigate, fill forms, scrape, upload. "
+            "I can navigate sites, fill forms, scrape data, and upload files when a web task is needed. "
             + can_load
-            + ' Example: "go to example.com and list the nav links" or "get the latest AED to INR price". '
-            + 'For a CSV you attached, ask "describe this file" — I will not open a browser. '
-            + 'You can also say "log this to Jira" once Atlassian is configured in Settings.'
+            + ' For example: "go to example.com and list the navigation links" or '
+            + '"get the latest AED to INR exchange rate". '
+            + 'For an attached CSV, ask "describe this file" — no browser is required. '
+            + "You can also ask me to log work to Jira once Atlassian is configured in Settings."
         )
     return (
-        "Tell me a web task"
+        "Please describe a web task"
         + (f" (default site: {app})" if app else "")
-        + ', or attach a file and ask me to describe it. I will not open the browser until then.'
+        + ", or attach a file and ask me to review it. I will not open the browser until then."
     )

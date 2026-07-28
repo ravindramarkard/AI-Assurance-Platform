@@ -328,18 +328,18 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
         </nav>
       </aside>
 
-      <div className="flex-1 overflow-y-auto scroll p-6 min-w-0">
+      <div className="flex-1 overflow-y-auto scroll p-6 min-w-0 flex flex-col">
         {tab === 'overview' && (
-          <div className="max-w-6xl space-y-5">
-            <header className="space-y-1">
+          <div className="w-full flex-1 flex flex-col gap-5 min-h-0">
+            <header className="space-y-1 shrink-0">
               <h1 className="text-[22px] font-semibold text-slate-100 tracking-tight">
                 {t('a2aPageTitle')}
               </h1>
-              <p className="text-[13px] text-slate-500 max-w-2xl">{t('a2aPageTagline')}</p>
+              <p className="text-[13px] text-slate-500">{t('a2aPageTagline')}</p>
             </header>
 
             <div
-              className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${bannerCls}`}
+              className={`shrink-0 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${bannerCls}`}
             >
               <span className="text-lg leading-none" aria-hidden>
                 {scores.verdict === 'pass' ? '✓' : scores.verdict === 'warn' ? '!' : '×'}
@@ -357,7 +357,7 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+            <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
               <MetricCard
                 label={t('a2aRunsThisWeek')}
                 value={String(scores.runsThisWeek || 0)}
@@ -383,7 +383,7 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
               />
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
               <MetricCard
                 label={t('a2aHallucination')}
                 value={fmtScore(scores.hallucination)}
@@ -406,8 +406,8 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
               />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div className="rounded-xl border border-line bg-ink-900 p-4 relative">
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-line bg-ink-900 p-4 relative min-h-0">
                 <div className="text-[13px] font-semibold text-slate-200 mb-3">
                   {t('a2aRadarTitle')}
                 </div>
@@ -423,8 +423,8 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
                 </button>
               </div>
 
-              <div className="rounded-xl border border-line bg-ink-900 p-4">
-                <div className="text-[13px] font-semibold text-slate-200 mb-3">
+              <div className="rounded-xl border border-line bg-ink-900 p-4 min-h-0 overflow-auto flex flex-col">
+                <div className="text-[13px] font-semibold text-slate-200 mb-3 shrink-0">
                   {t('a2aRecentRuns')}
                 </div>
                 {recent.length === 0 ? (
@@ -466,13 +466,13 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
         )}
 
         {tab === 'history' && (
-          <div className="max-w-4xl">
-            <h1 className="text-lg font-semibold text-slate-100 mb-1">{t('a2aRunHistory')}</h1>
-            <p className="text-sm text-slate-500 mb-5">{t('a2aRunHistoryBlurb')}</p>
+          <div className="w-full flex-1 flex flex-col min-h-0">
+            <h1 className="text-lg font-semibold text-slate-100 mb-1 shrink-0">{t('a2aRunHistory')}</h1>
+            <p className="text-sm text-slate-500 mb-5 shrink-0">{t('a2aRunHistoryBlurb')}</p>
             {sessions.length === 0 ? (
               <p className="text-sm text-slate-500">{t('a2aNoRuns')}</p>
             ) : (
-              <div className="rounded-xl border border-line overflow-hidden bg-ink-900">
+              <div className="flex-1 min-h-0 rounded-xl border border-line overflow-auto bg-ink-900">
                 <table className="w-full text-[13px]">
                   <thead className="bg-ink-850 text-slate-500 text-[11px] uppercase tracking-wider">
                     <tr>
@@ -513,9 +513,11 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
         )}
 
         {tab === 'reports' && (
-          <div className="max-w-3xl space-y-4">
-            <h1 className="text-lg font-semibold text-slate-100 mb-1">{t('a2aReports')}</h1>
-            <p className="text-sm text-slate-500 mb-2">{t('a2aReportsBlurb')}</p>
+          <div className="w-full flex-1 flex flex-col gap-4 min-h-0">
+            <div className="shrink-0">
+              <h1 className="text-lg font-semibold text-slate-100 mb-1">{t('a2aReports')}</h1>
+              <p className="text-sm text-slate-500">{t('a2aReportsBlurb')}</p>
+            </div>
             <div className="rounded-xl border border-line bg-ink-900 p-5 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-slate-300 text-sm">{t('a2aGoLiveVerdict')}</span>
@@ -553,9 +555,11 @@ export default function A2AConsolePage({ sessions, onOpenSession }: Props) {
         )}
 
         {tab === 'configuration' && (
-          <div className="max-w-2xl space-y-4">
-            <h1 className="text-lg font-semibold text-slate-100 mb-1">{t('a2aConfiguration')}</h1>
-            <p className="text-sm text-slate-500 mb-2">{t('a2aConfigurationBlurb')}</p>
+          <div className="w-full flex-1 flex flex-col gap-4 min-h-0">
+            <div className="shrink-0">
+              <h1 className="text-lg font-semibold text-slate-100 mb-1">{t('a2aConfiguration')}</h1>
+              <p className="text-sm text-slate-500">{t('a2aConfigurationBlurb')}</p>
+            </div>
             <div className="rounded-xl border border-line bg-ink-900 divide-y divide-line/70 text-sm">
               {[
                 { k: t('a2aHallucination'), v: '0.30 weight' },
