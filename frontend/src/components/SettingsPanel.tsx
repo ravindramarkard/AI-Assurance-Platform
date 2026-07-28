@@ -502,7 +502,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               })}
             </div>
           </fieldset>
-          <p className="mt-2 text-[11px] text-slate-500">{t('appearanceHint')}</p>
                     </div>
                   )}
                   {section === 'consoles' && (
