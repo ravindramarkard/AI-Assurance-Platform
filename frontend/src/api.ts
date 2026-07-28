@@ -103,6 +103,7 @@ export type ScheduledJob = {
   task: string
   schedule: SchedulePreset | string
   model?: string | null
+  llm_provider?: string | null
   max_steps: number
   start_url?: string | null
   system_prompt?: string | null
@@ -126,6 +127,7 @@ export type CreateScheduledJobBody = {
   name?: string
   schedule?: SchedulePreset
   model?: string
+  llm_provider?: string
   max_steps?: number
   start_url?: string
   system_prompt?: string

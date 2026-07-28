@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type CreateScheduledJobBody, type Event, type Message, type Session } from '../api'
+import { looksLikeGeneralChat } from '../chatGate'
 import { suggestFollowUps } from '../followUpPrompts'
 import { usePreferences } from '../preferences'
 import ScheduleJobModal from './ScheduleJobModal'
@@ -681,14 +682,18 @@ export default function ChatPanel({
                 className="max-w-3xl text-[14px] leading-[1.5] text-slate-300 whitespace-pre-wrap bg-ink-800 border border-line rounded-lg px-4 py-3"
               >
                 {m.content}
-                <MessageActions
-                  content={m.content}
-                  title={session?.title || session?.task || 'AgentBrowser report'}
-                  prompt={promptByAssistantId.get(m.id) || session?.task || ''}
-                  sessionId={session?.id}
-                  events={events}
-                  onOpenFile={onOpenFile}
-                />
+                {!looksLikeGeneralChat(
+                  promptByAssistantId.get(m.id) || session?.task || '',
+                ) && (
+                  <MessageActions
+                    content={m.content}
+                    title={session?.title || session?.task || 'AgentBrowser report'}
+                    prompt={promptByAssistantId.get(m.id) || session?.task || ''}
+                    sessionId={session?.id}
+                    events={events}
+                    onOpenFile={onOpenFile}
+                  />
+                )}
               </div>
             )
           }
@@ -1084,6 +1089,7 @@ export default function ChatPanel({
       {scheduleOpen && (
         <ScheduleJobModal
           defaultModel={session.model || ''}
+          defaultProvider={session.llm_provider || 'local'}
           sessions={sessions.length ? sessions : [session]}
           title={t('scheduleModalTitle')}
           subtitle={t('scheduleModalSubtitleChat')}
@@ -1092,6 +1098,7 @@ export default function ChatPanel({
             task: session.task || '',
             name: session.title?.slice(0, 60) || undefined,
             model: session.model || undefined,
+            llmProvider: session.llm_provider || undefined,
             startUrl:
               session.current_url && !session.current_url.startsWith('about:')
                 ? session.current_url
