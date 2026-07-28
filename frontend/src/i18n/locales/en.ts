@@ -428,6 +428,8 @@ export const en = {
   appearanceHint: 'Theme, fonts, and language apply immediately and are saved locally.',
   consolesSection: 'Assurance consoles',
   consolesSectionHint: 'Show or hide A2A, Red Team, and API Test in the sidebar.',
+  settingsNavLlm: 'Language model',
+  settingsLlmBlurb: 'Provider credentials and saved models for the model picker.',
   consoleEnabled: 'On',
   consoleDisabled: 'Off',
   logIssue: 'Log issue',
