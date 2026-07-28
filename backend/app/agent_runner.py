@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 # Live agents keyed by session_id
 _live: dict[str, Any] = {}
 
+
+def _apply_session_llm(cfg: dict[str, Any], session_row: dict[str, Any] | None) -> None:
+    """Overlay session snapshot provider/model onto cfg before build_llm."""
+    if not session_row:
+        return
+    sess_provider = (session_row.get("llm_provider") or "").strip()
+    sess_model = (session_row.get("model") or "").strip()
+    if sess_provider in ("local", "openai", "anthropic"):
+        cfg["llm_provider"] = sess_provider
+    if sess_model:
+        cfg["llm_model"] = sess_model
+
 _SKIP_FILE_PARTS = frozenset(
     {"browseruse_agent_data", ".git", "__pycache__", "node_modules", ".DS_Store"}
 )
@@ -403,6 +415,8 @@ async def run_session(session_id: str, task: str) -> None:
         return
 
     cfg = await effective_settings()
+    session_row = await db.get_session(session_id) or {}
+    _apply_session_llm(cfg, session_row)
     sdir = session_dir(session_id)
     workspace = sdir / "workspace"
     screenshots = sdir / "screenshots"
@@ -437,7 +451,13 @@ async def run_session(session_id: str, task: str) -> None:
         from .integration_actions import try_integration_from_chat
 
         model_name = cfg.get("llm_model") or "default"
-        await db.update_session(session_id, status="running", model=str(model_name), error=None)
+        await db.update_session(
+            session_id,
+            status="running",
+            model=str(model_name),
+            llm_provider=str(cfg.get("llm_provider") or "local"),
+            error=None,
+        )
 
         reply: str | None = None
         if is_local_attachment_task(task):
@@ -533,7 +553,11 @@ async def run_session(session_id: str, task: str) -> None:
 
     llm = build_llm(cfg)
     model_name = cfg.get("llm_model") or "default"
-    await db.update_session(session_id, model=str(model_name))
+    await db.update_session(
+        session_id,
+        model=str(model_name),
+        llm_provider=str(cfg.get("llm_provider") or "local"),
+    )
 
     step_count = 0
     stop_preview = asyncio.Event()
@@ -815,6 +839,8 @@ async def follow_up(session_id: str, content: str) -> None:
     from .llm_factory import effective_settings
 
     cfg = await effective_settings()
+    session_row = await db.get_session(session_id) or {}
+    _apply_session_llm(cfg, session_row)
     app_url = str(cfg.get("application_url") or "") or None
 
     # Chat-only follow-ups — greet / local files / log to Jira·Confluence; never open the browser.
