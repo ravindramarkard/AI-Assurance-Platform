@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { api, type AppSettings } from '../api'
+import { api, type AppSettings, type LlmModelsCatalog, type LlmProvider } from '../api'
 import {
   FONT_LABEL_KEYS,
   FONT_OPTIONS,
@@ -19,10 +19,17 @@ type Props = {
   onSaved: (s: AppSettings) => void
 }
 
+const EMPTY_CATALOG: LlmModelsCatalog = { local: [], openai: [], anthropic: [] }
+
+function asProvider(p: string): LlmProvider {
+  return p === 'openai' || p === 'anthropic' ? p : 'local'
+}
+
 type FormState = {
   llm_provider: string
   llm_base_url: string
   llm_model: string
+  llm_models: LlmModelsCatalog
   llm_api_key: string
   browser_use_api_key: string
   openai_api_key: string
@@ -62,6 +69,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     llm_provider: 'local',
     llm_base_url: 'http://localhost:1234/v1',
     llm_model: 'local-model',
+    llm_models: { ...EMPTY_CATALOG },
     llm_api_key: '',
     browser_use_api_key: '',
     openai_api_key: '',
@@ -82,6 +90,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     keycloak_password: '',
     keycloak_redirect_uri: '',
   })
+  const [modelDraft, setModelDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [testMsg, setTestMsg] = useState('')
@@ -91,15 +100,22 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
 
   useEffect(() => {
     if (!settings) return
-    const provider =
-      settings.llm_provider === 'openai' || settings.llm_provider === 'anthropic'
-        ? settings.llm_provider
-        : 'local'
+    const provider = asProvider(settings.llm_provider || 'local')
+    const model = settings.llm_model || 'local-model'
+    const catalog: LlmModelsCatalog = {
+      local: [...(settings.llm_models?.local || [])],
+      openai: [...(settings.llm_models?.openai || [])],
+      anthropic: [...(settings.llm_models?.anthropic || [])],
+    }
+    if (model && !catalog[provider].includes(model)) {
+      catalog[provider] = [...catalog[provider], model]
+    }
     setForm((f) => ({
       ...f,
       llm_provider: provider,
       llm_base_url: settings.llm_base_url || f.llm_base_url,
-      llm_model: settings.llm_model || f.llm_model,
+      llm_model: model,
+      llm_models: catalog,
       atlassian_deployment:
         settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
       jira_base_url: settings.jira_base_url || '',
@@ -114,6 +130,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       keycloak_username: settings.keycloak_username || '',
       keycloak_redirect_uri: settings.keycloak_redirect_uri || '',
     }))
+    setModelDraft('')
     const th = settings.ui_theme === 'contrast' ? 'light' : settings.ui_theme
     if (th && (THEME_OPTIONS as string[]).includes(th)) setTheme(th as ThemeMode)
     const loc = settings.ui_locale
@@ -128,6 +145,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         llm_provider: form.llm_provider,
         llm_base_url: form.llm_base_url,
         llm_model: form.llm_model,
+        llm_models: form.llm_models,
         ui_theme: theme,
         ui_locale: locale,
         atlassian_deployment: form.atlassian_deployment,
@@ -160,6 +178,13 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       setMsg(t('saved'))
       setForm((f) => ({
         ...f,
+        llm_provider: asProvider(s.llm_provider || f.llm_provider),
+        llm_model: s.llm_model || f.llm_model,
+        llm_models: {
+          local: [...(s.llm_models?.local || [])],
+          openai: [...(s.llm_models?.openai || [])],
+          anthropic: [...(s.llm_models?.anthropic || [])],
+        },
         llm_api_key: '',
         browser_use_api_key: '',
         openai_api_key: '',
@@ -483,7 +508,104 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         {form.llm_provider === 'anthropic' &&
           field('Anthropic API key', 'anthropic_api_key', 'password', settings?.anthropic_api_key || '')}
 
-        {field(t('model'), 'llm_model')}
+        {(() => {
+          const provider = asProvider(form.llm_provider)
+          const models = form.llm_models[provider] || []
+          const addModel = () => {
+            const next = modelDraft.trim()
+            if (!next) return
+            if (models.includes(next)) {
+              setModelDraft('')
+              return
+            }
+            setForm({
+              ...form,
+              llm_models: {
+                ...form.llm_models,
+                [provider]: [...models, next],
+              },
+              llm_model: models.length === 0 ? next : form.llm_model,
+            })
+            setModelDraft('')
+          }
+          const removeModel = (id: string) => {
+            const remaining = models.filter((m) => m !== id)
+            setForm({
+              ...form,
+              llm_models: { ...form.llm_models, [provider]: remaining },
+              llm_model:
+                form.llm_model === id ? remaining[0] || '' : form.llm_model,
+            })
+          }
+          return (
+            <div className="mb-4">
+              <div className="text-xs text-slate-400 mb-1.5">{t('model')} list</div>
+              <ul className="space-y-1.5 mb-2">
+                {models.length === 0 && (
+                  <li className="text-[11px] text-slate-500 px-1">No models yet — add one below.</li>
+                )}
+                {models.map((m) => {
+                  const active = form.llm_model === m
+                  return (
+                    <li
+                      key={m}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-sm ${
+                        active
+                          ? 'border-bu-500 bg-bu-500/10 text-slate-100'
+                          : 'border-line bg-ink-800 text-slate-300'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate mono text-xs">{m}</span>
+                      {active && (
+                        <span className="text-[10px] uppercase tracking-wide text-bu-400 font-semibold shrink-0">
+                          Active
+                        </span>
+                      )}
+                      {!active && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-slate-400 hover:text-bu-400 shrink-0"
+                          onClick={() => setForm({ ...form, llm_model: m })}
+                        >
+                          Use
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="text-[11px] text-slate-500 hover:text-red-400 shrink-0"
+                        onClick={() => removeModel(m)}
+                        aria-label={`Remove ${m}`}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 min-w-0 bg-ink-800 border border-line rounded-md px-2.5 py-1.5 text-sm text-slate-200"
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addModel()
+                    }
+                  }}
+                  placeholder="model id (e.g. gpt-4o)"
+                />
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50 shrink-0"
+                  onClick={addModel}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
         <div className="flex flex-wrap gap-2 items-center mb-6">
           <button
