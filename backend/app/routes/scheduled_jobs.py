@@ -37,6 +37,7 @@ async def create_job(body: CreateScheduledJobRequest):
         name=(body.name or "").strip() or None,
         schedule=body.schedule,
         model=body.model,
+        llm_provider=body.llm_provider,
         max_steps=body.max_steps,
         start_url=(body.start_url or "").strip() or None,
         system_prompt=(body.system_prompt or "").strip() or None,

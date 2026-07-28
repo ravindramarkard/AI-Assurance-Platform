@@ -204,6 +204,8 @@ async def init_db() -> None:
         await _ensure_column(db, "scheduled_jobs", "job_type", "TEXT NOT NULL DEFAULT 'agent'")
         await _ensure_column(db, "scheduled_jobs", "payload_json", "TEXT NOT NULL DEFAULT '{}'")
         await _ensure_column(db, "scheduled_jobs", "last_run_id", "TEXT")
+        await _ensure_column(db, "sessions", "llm_provider", "TEXT")
+        await _ensure_column(db, "scheduled_jobs", "llm_provider", "TEXT")
         await db.commit()
 
 
@@ -214,7 +216,9 @@ async def _ensure_column(db: aiosqlite.Connection, table: str, column: str, decl
         await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
-async def create_session(task: str, model: str | None = None) -> dict[str, Any]:
+async def create_session(
+    task: str, model: str | None = None, llm_provider: str | None = None
+) -> dict[str, Any]:
     sid = str(uuid4())
     title = task.strip().split("\n")[0][:60] or "Untitled agent"
     now = _now()
@@ -222,10 +226,10 @@ async def create_session(task: str, model: str | None = None) -> dict[str, Any]:
         db.row_factory = aiosqlite.Row
         await db.execute(
             """
-            INSERT INTO sessions (id, title, task, status, model, created_at, updated_at)
-            VALUES (?, ?, ?, 'queued', ?, ?, ?)
+            INSERT INTO sessions (id, title, task, status, model, llm_provider, created_at, updated_at)
+            VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
             """,
-            (sid, title, task, model, now, now),
+            (sid, title, task, model, llm_provider, now, now),
         )
         await db.execute(
             """
@@ -425,6 +429,7 @@ async def create_scheduled_job(
     name: str | None = None,
     schedule: str = "every_hour",
     model: str | None = None,
+    llm_provider: str | None = None,
     max_steps: int = 100,
     start_url: str | None = None,
     system_prompt: str | None = None,
@@ -440,10 +445,10 @@ async def create_scheduled_job(
         await db.execute(
             """
             INSERT INTO scheduled_jobs (
-                id, name, task, schedule, model, max_steps, start_url, system_prompt,
+                id, name, task, schedule, model, llm_provider, max_steps, start_url, system_prompt,
                 enabled, status, next_run_at, created_at, updated_at,
                 job_type, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
             """,
             (
                 jid,
@@ -451,6 +456,7 @@ async def create_scheduled_job(
                 task,
                 schedule,
                 model,
+                llm_provider,
                 max_steps,
                 start_url,
                 system_prompt,
