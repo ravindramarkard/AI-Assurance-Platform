@@ -18,6 +18,7 @@ ALLOWED = {
     "llm_base_url",
     "llm_api_key",
     "llm_model",
+    "llm_models",
     "browser_use_api_key",
     "openai_api_key",
     "anthropic_api_key",
@@ -70,6 +71,20 @@ async def update_settings(body: SettingsUpdate):
             from ..queue import scale_workers
 
             await scale_workers(n)
+        elif k == "llm_models":
+            from ..llm_models_catalog import normalize_catalog
+            import json
+            catalog = normalize_catalog(v)
+            # If llm_model also in this payload (or already in DB), ensure it is listed
+            provider = data.get("llm_provider")
+            model = data.get("llm_model")
+            if provider is None or model is None:
+                cur = await effective_settings()
+                provider = provider or cur.get("llm_provider") or "local"
+                model = model if model is not None else (cur.get("llm_model") or "")
+            from ..llm_models_catalog import ensure_model_in_catalog
+            catalog = ensure_model_in_catalog(catalog, str(provider), str(model or ""))
+            await db.set_setting(k, json.dumps(catalog))
         else:
             await db.set_setting(k, str(v))
             if hasattr(env_settings, k):

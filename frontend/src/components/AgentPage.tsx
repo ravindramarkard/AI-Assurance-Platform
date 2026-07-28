@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings } from '../api'
+import type { AppSettings, LlmProvider } from '../api'
 import { usePreferences } from '../preferences'
+import ModelPicker, { type ModelPick } from './ModelPicker'
 import VoiceInputButton from './VoiceInputButton'
 
 type Props = {
   settings: AppSettings | null
-  onCreate: (task: string, model?: string, files?: File[], runtimeUrl?: string) => Promise<void>
+  llmReady?: boolean | null
+  onCreate: (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    llmProvider?: string,
+  ) => Promise<void>
   onOpenSettings: () => void
 }
 
@@ -39,23 +47,37 @@ function IconInfo({ className = 'w-4 h-4' }: { className?: string }) {
   )
 }
 
-export default function AgentPage({ settings, onCreate, onOpenSettings }: Props) {
+export default function AgentPage({ settings, llmReady = true, onCreate, onOpenSettings }: Props) {
   const { t } = usePreferences()
+  const canSubmit = llmReady === true
   const [task, setTask] = useState('')
   const [runtimeUrl, setRuntimeUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [modelOpen, setModelOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [exampleIndex, setExampleIndex] = useState(0)
   const [attachments, setAttachments] = useState<PendingFile[]>([])
+  const [pick, setPick] = useState<ModelPick>({
+    provider: 'local',
+    model: 'local-model',
+  })
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const infoRef = useRef<HTMLDivElement>(null)
 
-  const modelLabel = settings?.llm_model || 'local-model'
-  const provider = settings?.llm_provider || 'local'
   const applicationUrl = (settings?.application_url || '').trim()
+
+  useEffect(() => {
+    const provider = (
+      settings?.llm_provider === 'openai' || settings?.llm_provider === 'anthropic'
+        ? settings.llm_provider
+        : 'local'
+    ) as LlmProvider
+    setPick({
+      provider,
+      model: settings?.llm_model || 'local-model',
+    })
+  }, [settings?.llm_provider, settings?.llm_model])
 
   const liveExample = EXAMPLE_PROMPTS[exampleIndex % EXAMPLE_PROMPTS.length]
   const livePlaceholder = useMemo(
@@ -115,15 +137,16 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
   }
 
   const submit = async () => {
-    if (!task.trim() || busy) return
+    if (!task.trim() || busy || !canSubmit) return
     setBusy(true)
     setErr('')
     try {
       await onCreate(
         task.trim(),
-        modelLabel,
+        pick.model,
         attachments.map((a) => a.file),
         runtimeUrl.trim() || undefined,
+        pick.provider,
       )
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to start agent')
@@ -153,13 +176,30 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
             {t('agentBrowser')}
           </h1>
           <p className="text-[14px] text-slate-500 mt-1.5" style={{ color: 'var(--fg-muted)' }}>
-            {t('localBrowserAgent')} · {provider}
+            {t('localBrowserAgent')} · {pick.provider}
           </p>
+          {llmReady === false && (
+            <div className="mt-3 max-w-md text-center rounded-xl border border-amber-700/50 bg-amber-950/40 px-4 py-2.5 text-[13px] text-amber-200">
+              <p className="font-medium">{t('modelNotConnected')}</p>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="mt-1.5 text-[12px] text-bu-400 hover:underline"
+              >
+                {t('openSettingsToConfigure')}
+              </button>
+            </div>
+          )}
+          {llmReady === null && (
+            <p className="mt-3 text-[13px] text-slate-500">{t('modelChecking')}</p>
+          )}
         </div>
 
         <div className="w-full">
           <div
-            className="bg-ink-850 border border-line rounded-2xl shadow-2xl focus-within:border-bu-500/40 transition-colors"
+            className={`bg-ink-850 border border-line rounded-2xl shadow-2xl focus-within:border-bu-500/40 transition-colors ${
+              !canSubmit ? 'opacity-60 pointer-events-none' : ''
+            }`}
             onDragOver={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -167,6 +207,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
             onDrop={(e) => {
               e.preventDefault()
               e.stopPropagation()
+              if (!canSubmit) return
               if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files)
             }}
           >
@@ -175,6 +216,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                 ref={taRef}
                 rows={3}
                 value={task}
+                disabled={!canSubmit}
                 onChange={(e) => setTask(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -183,7 +225,7 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                   }
                 }}
                 placeholder={task ? t('taskPlaceholder') : livePlaceholder}
-                className="flex-1 bg-transparent px-2.5 pt-1.5 pb-2 text-[15px] leading-[1.55] text-slate-100 placeholder-slate-500 resize-none outline-none min-h-[112px]"
+                className="flex-1 bg-transparent px-2.5 pt-1.5 pb-2 text-[15px] leading-[1.55] text-slate-100 placeholder-slate-500 resize-none outline-none min-h-[112px] disabled:cursor-not-allowed"
               />
               <div className="relative flex-shrink-0" ref={infoRef}>
                 <button
@@ -337,38 +379,19 @@ export default function AgentPage({ settings, onCreate, onOpenSettings }: Props)
                   onError={setErr}
                 />
 
-                <button
-                  type="button"
-                  onClick={() => setModelOpen((v) => !v)}
-                  className="accent-chip flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border"
-                >
-                  <span className="w-3.5 h-3.5 rounded-sm accent-dot" />
-                  <span className="max-w-[160px] truncate">{modelLabel}</span>
-                  <span className="opacity-60">▾</span>
-                </button>
-
-                {modelOpen && (
-                  <div className="absolute left-16 top-10 z-20 w-64 bg-ink-900 border border-line rounded-lg shadow-xl p-2 text-xs">
-                    <div className="px-2 py-1.5 text-slate-500">Current model</div>
-                    <div className="px-2 py-2 text-slate-200 mono truncate">{modelLabel}</div>
-                    <div className="px-2 py-1 text-slate-500">Provider: {provider}</div>
-                    <button
-                      className="mt-1 w-full text-left px-2 py-2 rounded hover:bg-ink-800 text-bu-400"
-                      onClick={() => {
-                        setModelOpen(false)
-                        onOpenSettings()
-                      }}
-                    >
-                      Change in Settings…
-                    </button>
-                  </div>
-                )}
+                <ModelPicker
+                  catalog={settings?.llm_models}
+                  value={pick}
+                  onChange={setPick}
+                  onManageSettings={onOpenSettings}
+                  disabled={busy || !canSubmit}
+                />
               </div>
 
               <button
                 type="button"
                 onClick={() => void submit()}
-                disabled={busy || !task.trim()}
+                disabled={busy || !task.trim() || !canSubmit}
                 className="w-11 h-11 rounded-full accent-fill accent-shadow flex items-center justify-center"
                 title="Start agent"
               >

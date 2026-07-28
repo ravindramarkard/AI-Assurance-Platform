@@ -164,14 +164,14 @@ export default function AgentSessionsPage({
   }
 
   return (
-    <main className="flex-1 min-w-0 bg-ink-900 overflow-y-auto scroll">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div>
+    <main className="flex-1 min-w-0 bg-ink-900 overflow-y-auto scroll flex flex-col">
+      <div className="w-full flex-1 flex flex-col px-6 py-6 min-h-0">
+        <div className="flex items-start justify-between gap-4 mb-6 flex-shrink-0">
+          <div className="min-w-0">
             <h1 className="text-[22px] font-semibold text-slate-100 tracking-tight">
               {t('agentSessions')}
             </h1>
-            <p className="mt-1.5 text-[13px] text-slate-400 max-w-2xl leading-relaxed">
+            <p className="mt-1.5 text-[13px] text-slate-400 leading-relaxed">
               {t('agentSessionsBlurb')}
             </p>
           </div>
@@ -197,7 +197,7 @@ export default function AgentSessionsPage({
           </div>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex-shrink-0">
           <input
             type="search"
             value={query}
@@ -207,7 +207,8 @@ export default function AgentSessionsPage({
           />
         </div>
 
-        <div className="border border-line rounded-xl overflow-hidden bg-ink-950/40">
+        <div className="border border-line rounded-xl overflow-hidden bg-ink-950/40 flex-1 min-h-0 flex flex-col">
+          <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left text-[13px]">
             <thead>
               <tr className="border-b border-line text-[11px] uppercase tracking-wide text-slate-500">
@@ -235,7 +236,7 @@ export default function AgentSessionsPage({
                   >
                     <td className="px-4 py-3.5 align-middle">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="truncate text-slate-100 font-medium max-w-[360px]">
+                        <span className="truncate text-slate-100 font-medium min-w-0 flex-1">
                           {s.title || s.task || t('untitled')}
                         </span>
                         {s.model && (
@@ -296,8 +297,9 @@ export default function AgentSessionsPage({
               )}
             </tbody>
           </table>
+          </div>
           {filtered.length > 0 && (
-            <div className="px-4 py-3 border-t border-line text-[12px] text-slate-500 flex items-center gap-2">
+            <div className="px-4 py-3 border-t border-line text-[12px] text-slate-500 flex items-center gap-2 flex-shrink-0">
               <span className="text-amber-400/80">✦</span>
               {t('noAdditionalRows')}
             </div>

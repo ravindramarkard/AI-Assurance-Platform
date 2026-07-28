@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class CreateSessionRequest(BaseModel):
     task: str = Field(min_length=1)
     model: str | None = None
+    llm_provider: Literal["local", "openai", "anthropic"] | None = None
     # Per-run override of Settings → Application URL
     runtime_url: str | None = None
 
@@ -25,6 +26,7 @@ class SettingsUpdate(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
+    llm_models: dict[str, list[str]] | None = None
     browser_use_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -105,6 +107,7 @@ class SessionOut(BaseModel):
     task: str
     status: str
     model: str | None = None
+    llm_provider: str | None = None
     created_at: str
     updated_at: str
     error: str | None = None
@@ -148,6 +151,7 @@ class CreateScheduledJobRequest(BaseModel):
     name: str | None = None
     schedule: SchedulePreset = "every_hour"
     model: str | None = None
+    llm_provider: str | None = None
     max_steps: int = Field(default=100, ge=1, le=500)
     start_url: str | None = None
     system_prompt: str | None = None
@@ -161,6 +165,7 @@ class UpdateScheduledJobRequest(BaseModel):
     name: str | None = None
     schedule: SchedulePreset | None = None
     model: str | None = None
+    llm_provider: str | None = None
     max_steps: int | None = Field(default=None, ge=1, le=500)
     start_url: str | None = None
     system_prompt: str | None = None
@@ -175,6 +180,7 @@ class ScheduledJobOut(BaseModel):
     task: str
     schedule: str
     model: str | None = None
+    llm_provider: str | None = None
     max_steps: int = 100
     start_url: str | None = None
     system_prompt: str | None = None

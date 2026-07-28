@@ -94,10 +94,10 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
     (job.job_type || 'agent') === 'api_test' || job.task.startsWith('[api_test]')
 
   return (
-    <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-start justify-between gap-4 mb-2">
-          <div>
+    <main className="flex-1 min-w-0 p-6 bg-ink-900 overflow-y-auto scroll flex flex-col">
+      <div className="w-full flex-1 flex flex-col min-h-0">
+        <div className="flex items-start justify-between gap-4 mb-2 flex-shrink-0">
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold text-slate-100">{t('scheduledJobs')}</h1>
             <p className="text-sm text-slate-400 mt-1">
               {t('scheduledJobsBlurb')}{' '}
@@ -119,7 +119,7 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
           </div>
         )}
 
-        <div className="mt-6 border border-line rounded-lg overflow-hidden bg-ink-850">
+        <div className="mt-6 border border-line rounded-lg overflow-hidden bg-ink-850 flex-1 min-h-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-line">
@@ -159,7 +159,7 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
                     <div className="font-medium text-slate-100">
                       {job.name || job.task.slice(0, 48) || t('untitled')}
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5 line-clamp-2 max-w-xs">
+                    <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">
                       {job.task}
                     </div>
                     <div className="mt-1.5 flex items-center gap-2 text-[10px]">
@@ -251,6 +251,7 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
       {modalOpen && (
         <ScheduleJobModal
           defaultModel={settings?.llm_model || ''}
+          defaultProvider={settings?.llm_provider || 'local'}
           sessions={sessions}
           subtitle={t('scheduleModalSubtitle')}
           onClose={() => setModalOpen(false)}

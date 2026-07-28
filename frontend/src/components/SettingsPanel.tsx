@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { api, type AppSettings, type BrowserEngine } from '../api'
+import { api, type AppSettings, type LlmModelsCatalog, type LlmProvider } from '../api'
 import {
   FONT_LABEL_KEYS,
   FONT_OPTIONS,
@@ -19,19 +19,23 @@ type Props = {
   onSaved: (s: AppSettings) => void
 }
 
+const EMPTY_CATALOG: LlmModelsCatalog = { local: [], openai: [], anthropic: [] }
+
+function asProvider(p: string): LlmProvider {
+  return p === 'openai' || p === 'anthropic' ? p : 'local'
+}
+
+type SettingsSection = 'appearance' | 'consoles' | 'llm' | 'keycloak' | 'atlassian'
+
 type FormState = {
   llm_provider: string
   llm_base_url: string
   llm_model: string
+  llm_models: LlmModelsCatalog
   llm_api_key: string
   browser_use_api_key: string
   openai_api_key: string
   anthropic_api_key: string
-  headless: boolean
-  browser_engine: BrowserEngine
-  browser_executable: string
-  application_url: string
-  max_concurrent_agents: number
   atlassian_deployment: 'server' | 'cloud'
   jira_base_url: string
   jira_email: string
@@ -67,15 +71,11 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     llm_provider: 'local',
     llm_base_url: 'http://localhost:1234/v1',
     llm_model: 'local-model',
+    llm_models: { ...EMPTY_CATALOG },
     llm_api_key: '',
     browser_use_api_key: '',
     openai_api_key: '',
     anthropic_api_key: '',
-    headless: true,
-    browser_engine: 'chromium',
-    browser_executable: '',
-    application_url: '',
-    max_concurrent_agents: 2,
     atlassian_deployment: 'server',
     jira_base_url: '',
     jira_email: '',
@@ -92,30 +92,33 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     keycloak_password: '',
     keycloak_redirect_uri: '',
   })
+  const [modelDraft, setModelDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [testMsg, setTestMsg] = useState('')
   const [llmTestMsg, setLlmTestMsg] = useState('')
   const [llmTesting, setLlmTesting] = useState(false)
   const [keycloakTestMsg, setKeycloakTestMsg] = useState('')
+  const [section, setSection] = useState<SettingsSection>('appearance')
 
   useEffect(() => {
     if (!settings) return
-    const engine = (settings.browser_engine || 'chromium') as BrowserEngine
-    const provider =
-      settings.llm_provider === 'openai' || settings.llm_provider === 'anthropic'
-        ? settings.llm_provider
-        : 'local'
+    const provider = asProvider(settings.llm_provider || 'local')
+    const model = settings.llm_model || 'local-model'
+    const catalog: LlmModelsCatalog = {
+      local: [...(settings.llm_models?.local || [])],
+      openai: [...(settings.llm_models?.openai || [])],
+      anthropic: [...(settings.llm_models?.anthropic || [])],
+    }
+    if (model && !catalog[provider].includes(model)) {
+      catalog[provider] = [...catalog[provider], model]
+    }
     setForm((f) => ({
       ...f,
       llm_provider: provider,
       llm_base_url: settings.llm_base_url || f.llm_base_url,
-      llm_model: settings.llm_model || f.llm_model,
-      headless: settings.headless,
-      browser_engine: ['chromium', 'chrome', 'custom'].includes(engine) ? engine : 'chromium',
-      browser_executable: settings.browser_executable || '',
-      application_url: settings.application_url || '',
-      max_concurrent_agents: Math.max(1, Math.min(8, Number(settings.max_concurrent_agents) || 2)),
+      llm_model: model,
+      llm_models: catalog,
       atlassian_deployment:
         settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
       jira_base_url: settings.jira_base_url || '',
@@ -130,6 +133,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       keycloak_username: settings.keycloak_username || '',
       keycloak_redirect_uri: settings.keycloak_redirect_uri || '',
     }))
+    setModelDraft('')
     const th = settings.ui_theme === 'contrast' ? 'light' : settings.ui_theme
     if (th && (THEME_OPTIONS as string[]).includes(th)) setTheme(th as ThemeMode)
     const loc = settings.ui_locale
@@ -144,11 +148,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         llm_provider: form.llm_provider,
         llm_base_url: form.llm_base_url,
         llm_model: form.llm_model,
-        headless: form.headless,
-        browser_engine: form.browser_engine,
-        browser_executable: form.browser_executable.trim(),
-        application_url: form.application_url.trim(),
-        max_concurrent_agents: Math.max(1, Math.min(8, Number(form.max_concurrent_agents) || 2)),
+        llm_models: form.llm_models,
         ui_theme: theme,
         ui_locale: locale,
         atlassian_deployment: form.atlassian_deployment,
@@ -181,6 +181,13 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       setMsg(t('saved'))
       setForm((f) => ({
         ...f,
+        llm_provider: asProvider(s.llm_provider || f.llm_provider),
+        llm_model: s.llm_model || f.llm_model,
+        llm_models: {
+          local: [...(s.llm_models?.local || [])],
+          openai: [...(s.llm_models?.openai || [])],
+          anthropic: [...(s.llm_models?.anthropic || [])],
+        },
         llm_api_key: '',
         browser_use_api_key: '',
         openai_api_key: '',
@@ -188,10 +195,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         jira_api_token: '',
         keycloak_password: '',
         keycloak_client_secret: '',
-        browser_engine: (s.browser_engine as BrowserEngine) || f.browser_engine,
-        browser_executable: s.browser_executable || '',
-        application_url: s.application_url || '',
-        max_concurrent_agents: Math.max(1, Math.min(8, Number(s.max_concurrent_agents) || 2)),
         atlassian_deployment:
           s.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
         jira_base_url: s.jira_base_url || '',
@@ -236,26 +239,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       />
     </label>
   )
-
-  const detected = settings?.detected_browsers
-  const engineStatus = (engine: BrowserEngine): string => {
-    if (engine === 'chromium') {
-      const path = detected?.headless_shell || detected?.chromium
-      return path ? `Found: ${path}` : 'Not found — run: cd backend && uv run browser-use install'
-    }
-    if (engine === 'chrome') {
-      return detected?.chrome
-        ? `Found: ${detected.chrome}`
-        : 'Google Chrome not found in the usual install locations'
-    }
-    return 'Provide the full path to a Chrome/Chromium binary'
-  }
-
-  const engines: { value: BrowserEngine; label: string; detail: string }[] = [
-    { value: 'chromium', label: 'Chromium', detail: 'Playwright / recommended' },
-    { value: 'chrome', label: 'Local Chrome', detail: 'Installed Google Chrome' },
-    { value: 'custom', label: 'Custom path', detail: 'Your own Chrome/Chromium binary' },
-  ]
 
   const providers: { value: string; label: string }[] = [
     { value: 'local', label: 'Local (LM Studio / Ollama)' },
@@ -307,14 +290,86 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     }
   }
 
-  return (
-    <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
-      <h1 className="text-lg font-semibold mb-1">{t('settingsTitle')}</h1>
-      <p className="text-sm text-slate-400 mb-6">{t('settingsBlurb')}</p>
+  const navItems: { id: SettingsSection; label: string; blurb: string }[] = [
+    { id: 'appearance', label: t('appearance'), blurb: t('appearanceHint') },
+    { id: 'consoles', label: t('consolesSection'), blurb: t('consolesSectionHint') },
+    { id: 'llm', label: t('settingsNavLlm'), blurb: t('settingsLlmBlurb') },
+    { id: 'keycloak', label: t('keycloakTitle'), blurb: t('keycloakBlurb') },
+    { id: 'atlassian', label: t('atlassianTitle'), blurb: t('atlassianBlurb') },
+  ]
+  const activeNav = navItems.find((n) => n.id === section) || navItems[0]
 
-      <div className="max-w-lg">
-        <div className="mb-6 border border-line rounded-xl p-4 bg-ink-850">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('appearance')}</h2>
+  return (
+    <main className="flex-1 min-h-0 flex flex-col bg-ink-900">
+      <div className="flex-1 min-h-0 overflow-y-auto scroll">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-8 pb-4">
+          <header className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-100">{t('settingsTitle')}</h1>
+            <p className="text-sm text-slate-400 mt-1 max-w-2xl">{t('settingsBlurb')}</p>
+          </header>
+
+          <div className="md:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-1 px-1">
+            {navItems.map((item) => {
+              const active = section === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSection(item.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    active
+                      ? 'border-bu-500 bg-bu-500/15 text-bu-400'
+                      : 'border-line bg-ink-850 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex gap-6 items-start">
+            <nav className="hidden md:block w-48 shrink-0 sticky top-4" aria-label={t('settingsTitle')}>
+              <ul className="space-y-0.5">
+                {navItems.map((item) => {
+                  const active = section === item.id
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSection(item.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors border ${
+                          active
+                            ? 'border-bu-500/40 bg-bu-500/10 text-slate-100 border-s-[3px] border-s-bu-500'
+                            : 'border-transparent text-slate-400 hover:bg-ink-850 hover:text-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </nav>
+
+            <div className="flex-1 min-w-0">
+              <section className="border border-line rounded-xl bg-ink-850/80 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-line bg-ink-850">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-100">{activeNav.label}</h2>
+                      <p className="text-[12px] text-slate-500 mt-1 leading-relaxed">{activeNav.blurb}</p>
+                    </div>
+                    {section === 'keycloak' && settings?.keycloak_configured && (
+                      <span className="text-[10px] uppercase tracking-wide text-emerald-400 font-semibold shrink-0 mt-0.5">
+                        {t('configured')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="px-5 py-5">
+                  {section === 'appearance' && (
+                    <div>
           <fieldset className="block mb-4">
             <legend className="text-xs text-slate-400 block mb-1.5">{t('theme')}</legend>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" role="radiogroup" aria-label={t('theme')}>
@@ -447,15 +502,18 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               })}
             </div>
           </fieldset>
-          <p className="mt-2 text-[11px] text-slate-500">{t('appearanceHint')}</p>
-        </div>
-
-        <div className="mb-6 border border-line rounded-xl p-4 bg-ink-850">
-          <h2 className="text-sm font-medium text-slate-200 mb-1">{t('consolesSection')}</h2>
-          <p className="text-[11px] text-slate-500 mb-3">{t('consolesSectionHint')}</p>
+                    </div>
+                  )}
+                  {section === 'consoles' && (
+                    <div>
           <div className="space-y-2.5">
             {(
               [
+                {
+                  id: 'agentbrowser' as const,
+                  label: t('navAgentBrowser'),
+                  blurb: t('agentBrowserBlurb'),
+                },
                 { id: 'a2a' as const, label: t('navA2A'), blurb: t('a2aConsoleBlurb') },
                 { id: 'redteam' as const, label: t('navRedTeam'), blurb: t('rtConsoleBlurb') },
                 { id: 'apitest' as const, label: t('navApiTest'), blurb: t('apiConsoleBlurb') },
@@ -485,8 +543,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               </label>
             ))}
           </div>
-        </div>
-
+                    </div>
+                  )}
+                  {section === 'llm' && (
+                    <div>
         <fieldset className="block mb-4">
           <legend className="text-xs text-slate-400 block mb-1.5">{t('provider')}</legend>
           <div className="space-y-1.5" role="radiogroup" aria-label="Provider">
@@ -523,7 +583,104 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         {form.llm_provider === 'anthropic' &&
           field('Anthropic API key', 'anthropic_api_key', 'password', settings?.anthropic_api_key || '')}
 
-        {field(t('model'), 'llm_model')}
+        {(() => {
+          const provider = asProvider(form.llm_provider)
+          const models = form.llm_models[provider] || []
+          const addModel = () => {
+            const next = modelDraft.trim()
+            if (!next) return
+            if (models.includes(next)) {
+              setModelDraft('')
+              return
+            }
+            setForm({
+              ...form,
+              llm_models: {
+                ...form.llm_models,
+                [provider]: [...models, next],
+              },
+              llm_model: models.length === 0 ? next : form.llm_model,
+            })
+            setModelDraft('')
+          }
+          const removeModel = (id: string) => {
+            const remaining = models.filter((m) => m !== id)
+            setForm({
+              ...form,
+              llm_models: { ...form.llm_models, [provider]: remaining },
+              llm_model:
+                form.llm_model === id ? remaining[0] || '' : form.llm_model,
+            })
+          }
+          return (
+            <div className="mb-4">
+              <div className="text-xs text-slate-400 mb-1.5">{t('model')} list</div>
+              <ul className="space-y-1.5 mb-2">
+                {models.length === 0 && (
+                  <li className="text-[11px] text-slate-500 px-1">No models yet — add one below.</li>
+                )}
+                {models.map((m) => {
+                  const active = form.llm_model === m
+                  return (
+                    <li
+                      key={m}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-sm ${
+                        active
+                          ? 'border-bu-500 bg-bu-500/10 text-slate-100'
+                          : 'border-line bg-ink-800 text-slate-300'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate mono text-xs">{m}</span>
+                      {active && (
+                        <span className="text-[10px] uppercase tracking-wide text-bu-400 font-semibold shrink-0">
+                          Active
+                        </span>
+                      )}
+                      {!active && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-slate-400 hover:text-bu-400 shrink-0"
+                          onClick={() => setForm({ ...form, llm_model: m })}
+                        >
+                          Use
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="text-[11px] text-slate-500 hover:text-red-400 shrink-0"
+                        onClick={() => removeModel(m)}
+                        aria-label={`Remove ${m}`}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 min-w-0 bg-ink-800 border border-line rounded-md px-2.5 py-1.5 text-sm text-slate-200"
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addModel()
+                    }
+                  }}
+                  placeholder="model id (e.g. gpt-4o)"
+                />
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50 shrink-0"
+                  onClick={addModel}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
         <div className="flex flex-wrap gap-2 items-center mb-6">
           <button
@@ -538,38 +695,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <span className="text-[11px] text-slate-400 break-all">{llmTestMsg}</span>
           )}
         </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('applicationUrl')}</h2>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('defaultStartUrl')}</span>
-            <input
-              type="url"
-              value={form.application_url}
-              placeholder="https://duckduckgo.com"
-              onChange={(e) => setForm({ ...form, application_url: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-            />
-          </label>
-          <p className="text-[11px] text-slate-500 mb-1">
-            Used only when the task has no destination (no{' '}
-            <span className="text-slate-400">https://</span> link and no{' '}
-            <span className="text-slate-400">go to google.com</span>-style host). Tasks that name a
-            site open that site directly — Application URL is skipped. Override for a single run with{' '}
-            <span className="text-slate-400">Runtime URL</span> on the home screen.
-          </p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h2 className="text-sm font-medium text-slate-200">{t('keycloakTitle')}</h2>
-            {settings?.keycloak_configured && (
-              <span className="text-[10px] uppercase tracking-wide text-emerald-400 font-semibold">
-                {t('configured')}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 mb-3">{t('keycloakBlurb')}</p>
+                    </div>
+                  )}
+                  {section === 'keycloak' && (
+                    <div>
           <label className="flex items-center gap-2 mb-3 text-sm text-slate-300">
             <input
               type="checkbox"
@@ -656,7 +785,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <input
               type="url"
               value={form.keycloak_redirect_uri}
-              placeholder={form.application_url || 'https://app.company.com (optional)'}
+              placeholder={settings?.application_url || 'https://app.company.com (optional)'}
               disabled={!form.keycloak_enabled}
               onChange={(e) => setForm({ ...form, keycloak_redirect_uri: e.target.value })}
               className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs disabled:opacity-50"
@@ -690,35 +819,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <p className="text-[11px] text-slate-400 mt-2 break-all">{keycloakTestMsg}</p>
           )}
           <p className="text-[10px] text-slate-500 mt-2">{t('keycloakTestHint')}</p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('concurrency')}</h2>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('maxAgents')}</span>
-            <input
-              type="number"
-              min={1}
-              max={8}
-              value={form.max_concurrent_agents}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  max_concurrent_agents: Math.max(1, Math.min(8, Number(e.target.value) || 1)),
-                })
-              }
-              className="w-28 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
-            />
-          </label>
-          <p className="text-[11px] text-slate-500">
-            With 1, a new agent stays <span className="text-slate-400">queued</span> until the current one
-            finishes. Raise to 2+ to run multiple agents in parallel.
-          </p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-1">{t('atlassianTitle')}</h2>
-          <p className="text-[11px] text-slate-500 mb-3">{t('atlassianBlurb')}</p>
+                    </div>
+                  )}
+                  {section === 'atlassian' && (
+                    <div>
           <fieldset className="block mb-3">
             <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianDeployment')}</legend>
             <div className="flex flex-wrap gap-2">
@@ -863,85 +967,30 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {testMsg && <span className="text-[11px] text-slate-400 break-all">{testMsg}</span>}
           </div>
           <p className="mt-2 text-[11px] text-slate-500">{t('chatLogHint')}</p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('browser')}</h2>
-
-          <fieldset className="block mb-4">
-            <legend className="text-xs text-slate-400 block mb-1.5">{t('browserEngine')}</legend>
-            <div className="space-y-1.5" role="radiogroup" aria-label={t('browserEngine')}>
-              {engines.map((e) => {
-                const active = form.browser_engine === e.value
-                return (
-                  <button
-                    key={e.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setForm({ ...form, browser_engine: e.value })}
-                    className={`w-full text-left px-3 py-2.5 rounded-md border transition-colors ${
-                      active
-                        ? 'border-bu-500 bg-bu-500/10'
-                        : 'border-line bg-ink-800 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className={`text-sm ${active ? 'text-slate-100' : 'text-slate-300'}`}>
-                      {e.label}
-                      <span className="text-slate-500 font-normal"> — {e.detail}</span>
                     </div>
-                    {active && (
-                      <div className="mt-1 text-[11px] text-slate-500 break-all">
-                        {engineStatus(e.value)}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
+                  )}
+                </div>
+              </section>
+              <p className="mt-4 text-[11px] text-slate-500 leading-relaxed">
+                Local models need tool/function calling and context ≥ 16k. Or edit{' '}
+                <code className="text-slate-400">backend/.env</code> and restart the API.
+              </p>
             </div>
-          </fieldset>
-
-          {form.browser_engine === 'custom' && (
-            <label className="block mb-4">
-              <span className="text-xs text-slate-400 block mb-1">Browser executable</span>
-              <input
-                type="text"
-                value={form.browser_executable}
-                placeholder="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-                onChange={(e) => setForm({ ...form, browser_executable: e.target.value })}
-                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-              />
-            </label>
-          )}
-
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={form.headless}
-              onChange={(e) => setForm({ ...form, headless: e.target.checked })}
-            />
-            {t('headless')}
-          </label>
-          <p className="mt-1.5 text-[11px] text-slate-500">
-            Chromium uses headless-shell when available. Local Chrome / custom use{' '}
-            <code className="text-slate-400">--headless=new</code>.
-          </p>
+          </div>
         </div>
+      </div>
 
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          className="bg-bu-500 hover:bg-bu-600 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-md text-sm"
-        >
-          {saving ? t('saving') : t('saveSettings')}
-        </button>
-        {msg && <span className="ml-3 text-xs text-slate-400">{msg}</span>}
-
-        <div className="mt-8 text-xs text-slate-500 space-y-2 border-t border-line pt-4">
-          <p>Local models need tool/function calling and context ≥ 16k.</p>
-          <p>
-            Or edit <code className="text-slate-400">backend/.env</code> and restart the API.
-          </p>
+      <div className="shrink-0 border-t border-line bg-ink-900/95 backdrop-blur-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 py-3 flex flex-wrap items-center gap-3 md:ps-[13.5rem]">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="bg-bu-500 hover:bg-bu-600 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-md text-sm"
+          >
+            {saving ? t('saving') : t('saveSettings')}
+          </button>
+          {msg && <span className="text-xs text-slate-400">{msg}</span>}
         </div>
       </div>
     </main>

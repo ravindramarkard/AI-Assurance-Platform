@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CreateScheduledJobBody, SchedulePreset, Session } from '../api'
+import type { CreateScheduledJobBody, LlmProvider, SchedulePreset, Session } from '../api'
 import { usePreferences } from '../preferences'
 
 export type ScheduleJobDefaults = {
   task?: string
   name?: string
   model?: string
+  llmProvider?: string
   startUrl?: string
   systemPrompt?: string
   maxSteps?: number
@@ -17,6 +18,7 @@ type SourceMode = 'existing' | 'new'
 
 type Props = {
   defaultModel?: string
+  defaultProvider?: string
   defaults?: ScheduleJobDefaults
   /** Past agent sessions the user can reuse as the scheduled task. */
   sessions?: Session[]
@@ -52,6 +54,7 @@ function applySession(
 
 export default function ScheduleJobModal({
   defaultModel = '',
+  defaultProvider = 'local',
   defaults,
   sessions = [],
   title,
@@ -84,6 +87,13 @@ export default function ScheduleJobModal({
   const [schedule, setSchedule] = useState<SchedulePreset>(defaults?.schedule || 'every_hour')
   const [advanced, setAdvanced] = useState(Boolean(defaults?.startUrl || defaults?.systemPrompt))
   const [model, setModel] = useState(defaults?.model || defaultModel)
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>(
+    (defaults?.llmProvider === 'openai' || defaults?.llmProvider === 'anthropic'
+      ? defaults.llmProvider
+      : defaultProvider === 'openai' || defaultProvider === 'anthropic'
+        ? defaultProvider
+        : 'local') as LlmProvider,
+  )
   const [maxSteps, setMaxSteps] = useState(defaults?.maxSteps || 100)
   const [startUrl, setStartUrl] = useState(defaults?.startUrl || '')
   const [systemPrompt, setSystemPrompt] = useState(defaults?.systemPrompt || '')
@@ -113,13 +123,16 @@ export default function ScheduleJobModal({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task, name, schedule, model, maxSteps, startUrl, systemPrompt])
+  }, [task, name, schedule, model, llmProvider, maxSteps, startUrl, systemPrompt])
 
   const onPickSession = (id: string) => {
     setSelectedSessionId(id)
     const s = usableSessions.find((x) => x.id === id)
     if (!s) return
     applySession(s, { setTask, setName, setModel, setStartUrl })
+    if (s.llm_provider === 'openai' || s.llm_provider === 'anthropic' || s.llm_provider === 'local') {
+      setLlmProvider(s.llm_provider)
+    }
     if (s.model || s.current_url) setAdvanced(true)
   }
 
@@ -157,6 +170,7 @@ export default function ScheduleJobModal({
         name: name.trim() || undefined,
         schedule,
         model: model.trim() || undefined,
+        llm_provider: llmProvider,
         max_steps: maxSteps,
         start_url: startUrl.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
@@ -292,6 +306,18 @@ export default function ScheduleJobModal({
 
           {advanced && (
             <div className="space-y-3 border border-line rounded-md p-3 bg-ink-850">
+              <label className="block">
+                <span className="text-xs text-slate-400">{t('provider')}</span>
+                <select
+                  value={llmProvider}
+                  onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}
+                  className="mt-1.5 w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-bu-500"
+                >
+                  <option value="local">Local</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </label>
               <label className="block">
                 <span className="text-xs text-slate-400">{t('model')}</span>
                 <input

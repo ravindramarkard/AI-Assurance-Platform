@@ -69,7 +69,7 @@ async def _fire_agent_job(job: dict) -> str:
     nxt = await _claim_job_slot(job)
     task_text = _build_task(job)
     title_prefix = (job.get("name") or "Scheduled").strip() or "Scheduled"
-    session = await db.create_session(task_text, job.get("model"))
+    session = await db.create_session(task_text, job.get("model"), job.get("llm_provider"))
     sid = session["id"]
     await db.update_session(sid, title=f"[sched] {title_prefix}"[:60])
     session_dir(sid)

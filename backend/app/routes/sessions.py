@@ -85,7 +85,7 @@ async def list_sessions():
 
 @router.post("")
 async def create_session(body: CreateSessionRequest):
-    session = await db.create_session(body.task, body.model)
+    session = await db.create_session(body.task, body.model, body.llm_provider)
     session_dir(session["id"])
     runtime = (body.runtime_url or "").strip() or None
     if runtime:
@@ -133,6 +133,7 @@ async def delete_session(session_id: str):
 async def create_session_with_files(
     task: str = Form(...),
     model: str | None = Form(None),
+    llm_provider: str | None = Form(None),
     runtime_url: str | None = Form(None),
     files: list[UploadFile] | None = File(None),
 ):
@@ -141,7 +142,7 @@ async def create_session_with_files(
     if not task:
         raise HTTPException(400, "Task is required")
     real_files = [f for f in (files or []) if f.filename]
-    session = await db.create_session(task, model)
+    session = await db.create_session(task, model, llm_provider)
     sid = session["id"]
     session_dir(sid)
     saved = await _save_uploads(sid, real_files)

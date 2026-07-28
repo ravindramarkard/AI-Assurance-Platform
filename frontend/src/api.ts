@@ -4,6 +4,7 @@ export type Session = {
   task: string
   status: string
   model?: string | null
+  llm_provider?: string | null
   created_at: string
   updated_at: string
   error?: string | null
@@ -29,10 +30,19 @@ export type Event = {
 
 export type BrowserEngine = 'chromium' | 'chrome' | 'custom'
 
+export type LlmProvider = 'local' | 'openai' | 'anthropic'
+
+export type LlmModelsCatalog = {
+  local: string[]
+  openai: string[]
+  anthropic: string[]
+}
+
 export type AppSettings = {
   llm_provider: string
   llm_base_url: string
   llm_model: string
+  llm_models?: LlmModelsCatalog
   llm_api_key?: string | null
   browser_use_api_key?: string | null
   openai_api_key?: string | null
@@ -93,6 +103,7 @@ export type ScheduledJob = {
   task: string
   schedule: SchedulePreset | string
   model?: string | null
+  llm_provider?: string | null
   max_steps: number
   start_url?: string | null
   system_prompt?: string | null
@@ -116,6 +127,7 @@ export type CreateScheduledJobBody = {
   name?: string
   schedule?: SchedulePreset
   model?: string
+  llm_provider?: string
   max_steps?: number
   start_url?: string
   system_prompt?: string
@@ -374,13 +386,21 @@ export const api = {
     fetch(`/api/sessions/${id}`, { method: 'DELETE' }).then((r) => json<{ ok: boolean }>(r)),
   clearHistory: () =>
     fetch('/api/sessions', { method: 'DELETE' }).then((r) => json<{ ok: boolean; deleted: number }>(r)),
-  createSession: (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
+  createSession: (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    llmProvider?: string,
+  ) => {
     const runtime_url = (runtimeUrl || '').trim() || undefined
+    const llm_provider = (llmProvider || '').trim() || undefined
     if (files && files.length > 0) {
       const fd = new FormData()
       fd.append('task', task)
       if (model) fd.append('model', model)
       if (runtime_url) fd.append('runtime_url', runtime_url)
+      if (llm_provider) fd.append('llm_provider', llm_provider)
       for (const f of files) fd.append('files', f)
       return fetch('/api/sessions/with-files', {
         method: 'POST',
@@ -390,7 +410,7 @@ export const api = {
     return fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, model, runtime_url }),
+      body: JSON.stringify({ task, model, runtime_url, llm_provider }),
     }).then((r) => json<Session>(r))
   },
   getSession: (id: string) => fetch(`/api/sessions/${id}`).then((r) => json<Session>(r)),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type AppSettings, type Event, type Message, type Session } from './api'
+import { api, type AppSettings, type Event, type LlmProvider, type Message, type Session } from './api'
 import { looksLikeGeneralChat } from './chatGate'
 import {
   THEME_OPTIONS,
@@ -11,16 +11,17 @@ import {
 } from './preferences'
 import { connectSessionWs } from './ws'
 import Sidebar, { type SidebarView } from './components/Sidebar'
+import AgentBrowserPage, { type AgentBrowserTab } from './components/AgentBrowserPage'
 import ChatPanel from './components/ChatPanel'
 import RightPanel from './components/RightPanel'
 import PanelResizeHandle from './components/PanelResizeHandle'
 import SettingsPanel from './components/SettingsPanel'
 import AgentPage from './components/AgentPage'
 import AgentSessionsPage from './components/AgentSessionsPage'
-import ScheduledJobsPage from './components/ScheduledJobsPage'
 import A2AConsolePage from './components/A2AConsolePage'
 import RedTeamConsolePage from './components/RedTeamConsolePage'
 import ApiTestConsolePage from './components/ApiTestConsolePage'
+import ModelPicker from './components/ModelPicker'
 
 const RIGHT_PANEL_MIN = 320
 const RIGHT_PANEL_DEFAULT = 560
@@ -37,16 +38,8 @@ function clampSidebarWidth(w: number): number {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)))
 }
 
-type View =
-  | 'agent'
-  | 'sessions'
-  | 'scheduled'
-  | 'browsers'
-  | 'analytics'
-  | 'a2a'
-  | 'redteam'
-  | 'apitest'
-  | 'settings'
+type View = 'agentbrowser' | 'a2a' | 'redteam' | 'apitest' | 'settings'
+type AgentsPane = 'create' | 'list'
 
 export default function App() {
   const { t, theme, setTheme, locale, setLocale, resolvedTheme, consoles } = usePreferences()
@@ -55,10 +48,14 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [session, setSession] = useState<Session | null>(null)
-  const [view, setView] = useState<View>('agent')
+  const [view, setView] = useState<View>('agentbrowser')
+  const [agentBrowserTab, setAgentBrowserTab] = useState<AgentBrowserTab>('agents')
+  const [agentsPane, setAgentsPane] = useState<AgentsPane>('create')
   const [wsConnected, setWsConnected] = useState(false)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [apiOk, setApiOk] = useState(false)
+  /** null = probing, true = reachable, false = not configured/connected */
+  const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
   const [rightTab, setRightTab] = useState<'browser' | 'files' | 'logs'>('browser')
   const [scheduledCount, setScheduledCount] = useState(0)
@@ -70,8 +67,10 @@ export default function App() {
       return false
     }
   })
+  const [sidebarPeek, setSidebarPeek] = useState(false)
 
   const toggleSidebar = useCallback(() => {
+    setSidebarPeek(false)
     setSidebarCollapsed((v) => {
       const next = !v
       try {
@@ -81,6 +80,16 @@ export default function App() {
       }
       return next
     })
+  }, [])
+
+  const hideSidebar = useCallback(() => {
+    setSidebarPeek(false)
+    setSidebarCollapsed(true)
+    try {
+      localStorage.setItem('aip_sidebar_collapsed', '1')
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -166,6 +175,21 @@ export default function App() {
     }
   }, [])
 
+  const probeLlm = useCallback(async (cfg: AppSettings | null) => {
+    const model = (cfg?.llm_model || '').trim()
+    if (!model) {
+      setLlmReady(false)
+      return
+    }
+    setLlmReady(null)
+    try {
+      const r = await api.testLlm()
+      setLlmReady(!!r.ok)
+    } catch {
+      setLlmReady(false)
+    }
+  }, [])
+
   useEffect(() => {
     refreshSessions()
     refreshScheduledCount()
@@ -179,19 +203,27 @@ export default function App() {
         if (s.ui_locale === 'en' || s.ui_locale === 'ar' || s.ui_locale === 'hi') {
           setLocale(s.ui_locale)
         }
+        void probeLlm(s)
       })
-      .catch(() => {})
+      .catch(() => {
+        setLlmReady(false)
+      })
     const timer = window.setInterval(() => {
       refreshSessions()
       refreshScheduledCount()
     }, 5000)
     return () => window.clearInterval(timer)
-  }, [refreshSessions, refreshScheduledCount, setTheme, setLocale])
+  }, [refreshSessions, refreshScheduledCount, setTheme, setLocale, probeLlm])
 
   useEffect(() => {
-    if (view === 'a2a' && !consoles.a2a) setView('sessions')
-    else if (view === 'redteam' && !consoles.redteam) setView('sessions')
-    else if (view === 'apitest' && !consoles.apitest) setView('sessions')
+    if (view === 'agentbrowser' && !consoles.agentbrowser) setView('settings')
+    else if (view === 'a2a' && !consoles.a2a) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    } else if (view === 'redteam' && !consoles.redteam) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    } else if (view === 'apitest' && !consoles.apitest) {
+      setView(consoles.agentbrowser ? 'agentbrowser' : 'settings')
+    }
   }, [view, consoles])
 
   const goHome = useCallback(() => {
@@ -201,12 +233,15 @@ export default function App() {
     setEvents([])
     setOpenFilePath(null)
     setRightTab('browser')
-    setView('agent')
+    setView('agentbrowser')
+    setAgentBrowserTab('agents')
+    setAgentsPane('create')
   }, [])
 
   const loadSession = useCallback(async (id: string) => {
     setActiveId(id)
-    setView('sessions')
+    setView('agentbrowser')
+    setAgentBrowserTab('agents')
     setOpenFilePath(null)
     setRightTab('browser')
     const [s, msgs, evs] = await Promise.all([
@@ -343,8 +378,17 @@ export default function App() {
     return true
   }, [hadBrowserActivity, events, session, messages])
 
-  const onCreate = async (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
-    const s = await api.createSession(task, model, files, runtimeUrl)
+  const onCreate = async (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    llmProvider?: string,
+  ) => {
+    if (llmReady !== true) {
+      throw new Error(t('modelNotConnected'))
+    }
+    const s = await api.createSession(task, model, files, runtimeUrl, llmProvider)
     await refreshSessions()
     await loadSession(s.id)
     if (files && files.length > 0) {
@@ -357,6 +401,10 @@ export default function App() {
 
   const onSend = async (content: string) => {
     if (!activeId) return
+    if (llmReady !== true) {
+      window.alert(t('modelNotConnected'))
+      return
+    }
     setMessages((prev) => [
       ...prev,
       {
@@ -380,44 +428,134 @@ export default function App() {
     }
   }
 
-  const onClearHistory = async () => {
-    try {
-      await api.clearHistory()
-      goHome()
-      await refreshSessions()
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Clear failed')
-    }
-  }
+  const inAgentBrowser = view === 'agentbrowser'
+  const showWorkspace = inAgentBrowser && agentBrowserTab === 'agents' && !!activeId
+  const showSessionsList =
+    inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'list'
+  const showCreate =
+    inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'create'
 
-  const showWorkspace = view === 'sessions' && !!activeId
-  const showSessionsList = view === 'sessions' && !activeId
+  const agentsWorkspace = showSessionsList ? (
+    <AgentSessionsPage
+      sessions={sessions}
+      onOpenSession={(id) => {
+        void loadSession(id)
+      }}
+      onCreateSession={goHome}
+      onRefresh={() => {
+        void refreshSessions()
+      }}
+      onDelete={onDeleteSession}
+    />
+  ) : showWorkspace ? (
+    <>
+      <ChatPanel
+        session={session}
+        sessions={sessions}
+        messages={messages}
+        events={events}
+        llmReady={llmReady}
+        onSend={onSend}
+        onControl={(action) => {
+          if (!activeId) return
+          void api.control(activeId, action).catch((e) => {
+            window.alert(e instanceof Error ? e.message : 'Control failed')
+          })
+        }}
+        onClearSession={() => {
+          if (!activeId) return
+          void onDeleteSession(activeId)
+        }}
+        onOpenFile={(path) => {
+          setOpenFilePath(path)
+          setRightTab('files')
+        }}
+        onScheduled={() => {
+          void refreshScheduledCount()
+        }}
+        onOpenScheduled={() => {
+          setView('agentbrowser')
+          setAgentBrowserTab('scheduled')
+        }}
+      />
+      {showBrowserPanel && !rightPanelHidden ? (
+        <>
+          <PanelResizeHandle
+            edge="start"
+            label="Resize snaps panel"
+            onResize={onRightPanelResize}
+            onResizeEnd={() => {
+              setRightPanelWidth((w) => {
+                persistRightPanelWidth(w)
+                return w
+              })
+            }}
+          />
+          <RightPanel
+            sessionId={activeId}
+            screenshot={latestScreenshot}
+            url={currentUrl}
+            events={events}
+            status={session?.status}
+            tab={rightTab}
+            onTabChange={setRightTab}
+            focusFile={openFilePath}
+            onHide={toggleRightPanel}
+            width={rightPanelWidth}
+          />
+        </>
+      ) : showBrowserPanel && rightPanelHidden ? (
+        <div className="w-11 border-l border-line bg-ink-900 flex flex-col items-center py-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={toggleRightPanel}
+            title={t('showSnapsPanel')}
+            className="w-8 h-8 rounded-md border border-line bg-ink-800 hover:border-bu-500/50 text-slate-300 flex items-center justify-center"
+            aria-label={t('showSnapsPanel')}
+          >
+            ⊡
+          </button>
+        </div>
+      ) : null}
+    </>
+  ) : showCreate ? (
+    <AgentPage
+      settings={settings}
+      llmReady={llmReady}
+      onCreate={onCreate}
+      onOpenSettings={() => setView('settings')}
+    />
+  ) : null
 
   return (
     <div className="bg-ink-950 text-slate-200 h-screen overflow-hidden flex flex-col">
       <header className="h-12 bg-ink-900 border-b border-line flex items-center px-4 justify-between text-[13px] flex-shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-7 h-7 rounded-lg accent-fill font-bold text-xs flex items-center justify-center flex-shrink-0">
+            AI
+          </div>
+          <span className="font-semibold text-[14px] text-slate-100 truncate">
+            {t('brand')}
+          </span>
           <button
             type="button"
-            onClick={goHome}
-            className="flex items-center gap-2 hover:opacity-90"
-            title="New agent"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? t('showSidebar') : t('hideSidebar')}
+            className="w-8 h-8 rounded-md text-slate-400 hover:text-slate-200 hover:bg-ink-800 flex items-center justify-center flex-shrink-0"
+            aria-label={sidebarCollapsed ? t('showSidebar') : t('hideSidebar')}
           >
-            <div className="w-7 h-7 rounded-lg accent-fill font-bold text-xs flex items-center justify-center">
-              AI
-            </div>
-            <span className="font-semibold text-[13px]">{t('brand')}</span>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg>
           </button>
-          <span className="text-slate-600">/</span>
-          <span className="text-slate-400">{t('local')}</span>
-          {activeId && showWorkspace && (
+          {activeId && showWorkspace ? (
             <>
               <span className="text-slate-600">/</span>
               <span className="text-slate-400">session</span>
-              <span className="text-slate-600">/</span>
               <span className="mono text-xs text-slate-300">{activeId.slice(0, 8)}…</span>
             </>
-          )}
+          ) : null}
         </div>
         <div className="flex items-center gap-2 text-[12px] text-slate-400">
           <select
@@ -465,43 +603,45 @@ export default function App() {
             </span>
           </div>
           <span className="text-slate-600">|</span>
-          <span>{settings?.llm_provider || '—'}</span>
-          <span className="text-slate-600">|</span>
-          <span className="truncate max-w-[140px]">{settings?.llm_model || 'model'}</span>
+          <ModelPicker
+            compact
+            catalog={settings?.llm_models}
+            value={{
+              provider: (['local', 'openai', 'anthropic'].includes(settings?.llm_provider || '')
+                ? settings!.llm_provider
+                : 'local') as LlmProvider,
+              model: settings?.llm_model || '',
+            }}
+            onChange={async (next) => {
+              const s = await api.updateSettings({
+                llm_provider: next.provider,
+                llm_model: next.model,
+              })
+              setSettings(s)
+              void probeLlm(s)
+            }}
+            onManageSettings={() => setView('settings')}
+          />
         </div>
       </header>
 
       <div className="flex flex-1 min-h-0">
         <Sidebar
-          sessions={sessions}
-          activeId={showWorkspace ? activeId : null}
-          view={
-            (view === 'agent' || view === 'sessions'
-              ? 'sessions'
-              : view) as SidebarView
-          }
-          onView={(v) => {
-            if (v === 'sessions') {
-              setActiveId(null)
-              setSession(null)
-              setMessages([])
-              setEvents([])
-              setOpenFilePath(null)
-              setView('sessions')
-              return
+          view={view}
+          onView={(v: SidebarView) => {
+            if (v === 'agentbrowser') {
+              setView('agentbrowser')
+            } else {
+              setView(v)
             }
-            setView(v)
+            hideSidebar()
           }}
-          onSelect={loadSession}
-          onNew={goHome}
-          onDelete={onDeleteSession}
-          onClearHistory={onClearHistory}
-          scheduledCount={scheduledCount}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebar}
+          peek={sidebarPeek}
+          onPeekChange={setSidebarPeek}
           width={sidebarWidth}
         />
-        {!sidebarCollapsed && (
+        {!sidebarCollapsed && !sidebarPeek && (
           <PanelResizeHandle
             edge="end"
             label="Resize sidebar"
@@ -516,19 +656,13 @@ export default function App() {
         )}
 
         {view === 'settings' ? (
-          <SettingsPanel settings={settings} onSaved={(s) => setSettings(s)} />
-        ) : view === 'scheduled' ? (
-          <ScheduledJobsPage
+          <SettingsPanel
             settings={settings}
-            sessions={sessions}
-            onOpenSession={(id) => {
-              void loadSession(id)
+            onSaved={(s) => {
+              setSettings(s)
+              void probeLlm(s)
             }}
           />
-        ) : view === 'browsers' ? (
-          <BrowsersView />
-        ) : view === 'analytics' ? (
-          <AnalyticsView sessions={sessions} />
         ) : view === 'a2a' ? (
           <A2AConsolePage
             sessions={sessions}
@@ -545,157 +679,29 @@ export default function App() {
           />
         ) : view === 'apitest' ? (
           <ApiTestConsolePage sessions={sessions} />
-        ) : showSessionsList ? (
-          <AgentSessionsPage
+        ) : (
+          <AgentBrowserPage
+            tab={agentBrowserTab}
+            onTabChange={(tab) => {
+              setAgentBrowserTab(tab)
+              if (tab === 'agents' && !activeId) setAgentsPane('list')
+            }}
+            scheduledCount={scheduledCount}
             sessions={sessions}
+            onNew={goHome}
+            llmReady={llmReady}
+            agentsWorkspace={agentsWorkspace}
+            settings={settings}
+            onSettingsSaved={(s) => {
+              setSettings(s)
+              void probeLlm(s)
+            }}
             onOpenSession={(id) => {
               void loadSession(id)
             }}
-            onCreateSession={goHome}
-            onRefresh={() => {
-              void refreshSessions()
-            }}
-            onDelete={onDeleteSession}
-          />
-        ) : showWorkspace ? (
-          <>
-            <ChatPanel
-              session={session}
-              sessions={sessions}
-              messages={messages}
-              events={events}
-              onSend={onSend}
-              onControl={(action) => {
-                if (!activeId) return
-                void api.control(activeId, action).catch((e) => {
-                  window.alert(e instanceof Error ? e.message : 'Control failed')
-                })
-              }}
-              onClearSession={() => {
-                if (!activeId) return
-                void onDeleteSession(activeId)
-              }}
-              onOpenFile={(path) => {
-                setOpenFilePath(path)
-                setRightTab('files')
-              }}
-              onScheduled={() => {
-                void refreshScheduledCount()
-              }}
-              onOpenScheduled={() => setView('scheduled')}
-            />
-            {showBrowserPanel && !rightPanelHidden ? (
-              <>
-                <PanelResizeHandle
-                  edge="start"
-                  label="Resize snaps panel"
-                  onResize={onRightPanelResize}
-                  onResizeEnd={() => {
-                    setRightPanelWidth((w) => {
-                      persistRightPanelWidth(w)
-                      return w
-                    })
-                  }}
-                />
-                <RightPanel
-                  sessionId={activeId}
-                  screenshot={latestScreenshot}
-                  url={currentUrl}
-                  events={events}
-                  status={session?.status}
-                  tab={rightTab}
-                  onTabChange={setRightTab}
-                  focusFile={openFilePath}
-                  onHide={toggleRightPanel}
-                  width={rightPanelWidth}
-                />
-              </>
-            ) : showBrowserPanel && rightPanelHidden ? (
-              <div className="w-11 border-l border-line bg-ink-900 flex flex-col items-center py-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={toggleRightPanel}
-                  title={t('showSnapsPanel')}
-                  className="w-8 h-8 rounded-md border border-line bg-ink-800 hover:border-bu-500/50 text-slate-300 flex items-center justify-center"
-                  aria-label={t('showSnapsPanel')}
-                >
-                  ⊡
-                </button>
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <AgentPage
-            settings={settings}
-            onCreate={onCreate}
-            onOpenSettings={() => setView('settings')}
           />
         )}
       </div>
     </div>
-  )
-}
-
-function BrowsersView() {
-  const { t } = usePreferences()
-  const [data, setData] = useState<Awaited<ReturnType<typeof api.browsers>> | null>(null)
-  useEffect(() => {
-    api.browsers().then(setData).catch(() => {})
-    const timer = window.setInterval(() => api.browsers().then(setData).catch(() => {}), 3000)
-    return () => window.clearInterval(timer)
-  }, [])
-  return (
-    <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
-      <h1 className="text-lg font-semibold mb-4">{t('remoteBrowsers')}</h1>
-      <p className="text-sm text-slate-400 mb-6">{t('browsersBlurb')}</p>
-      {data?.browsers.map((b) => (
-        <div key={b.id} className="border border-line rounded-lg p-4 bg-ink-800 max-w-md">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${b.status === 'busy' ? 'bg-bu-500 pulse-dot' : 'bg-green-400'}`}
-            />
-            <span className="font-semibold">{b.name}</span>
-            <span className="ml-auto text-xs text-slate-500 uppercase">{b.status}</span>
-          </div>
-          <div className="mt-3 text-xs text-slate-400 flex gap-4">
-            <span>
-              {t('activeCount')}: {b.active_sessions}
-            </span>
-            <span>
-              {t('queuedCount')}: {data.queued}
-            </span>
-          </div>
-        </div>
-      ))}
-    </main>
-  )
-}
-
-function AnalyticsView({ sessions }: { sessions: Session[] }) {
-  const { t } = usePreferences()
-  const completed = sessions.filter((s) => s.status === 'completed').length
-  const failed = sessions.filter((s) => s.status === 'failed').length
-  const running = sessions.filter((s) =>
-    ['running', 'queued', 'thinking', 'paused'].includes(s.status),
-  ).length
-  const cards = [
-    { label: t('totalSessions'), value: sessions.length },
-    { label: t('completedSessions'), value: completed },
-    { label: t('failedSessions'), value: failed },
-    { label: t('runningSessions'), value: running },
-  ]
-  return (
-    <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
-      <h1 className="text-lg font-semibold mb-1">{t('analyticsTitle')}</h1>
-      <p className="text-sm text-slate-400 mb-6">{t('analyticsBlurb')}</p>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 max-w-3xl">
-        {cards.map((c) => (
-          <div key={c.label} className="border border-line rounded-xl bg-ink-800 p-4">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">{c.label}</div>
-            <div className="mt-2 text-2xl font-semibold text-slate-100 tabular-nums">{c.value}</div>
-          </div>
-        ))}
-      </div>
-    </main>
   )
 }
