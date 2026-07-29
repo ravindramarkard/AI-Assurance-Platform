@@ -68,7 +68,8 @@ function detectTopic(userAsk: string, assistant: string, files: string[]): Topic
   const a = assistant.toLowerCase().slice(0, 800)
 
   if (/^(hi|hello|hey|yo|hola|howdy)\b/.test(u) && u.length < 40) return 'greeting'
-  if (/\b(jira|confluence)\b/.test(u) || /not configured|settings →/i.test(assistant)) return 'jira'
+  // Only when the user explicitly asked about Jira/Confluence — never from assistant copy
+  if (/\b(jira|confluence)\b/.test(u)) return 'jira'
 
   // Strong user-intent signals first
   if (/\b(news|headline|headlines|top\s*\d+\s*news|google\s*news)\b/.test(u)) return 'news'
@@ -141,7 +142,7 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       [
         'Retry the same task and continue from where it failed',
         'Explain what went wrong in the last step',
-        `Log this to Jira: ${session.title || user || 'agent failure'}`.slice(0, 120),
+        'Summarize the last successful step before the failure',
       ],
       4,
     )
@@ -207,8 +208,16 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       break
 
     case 'jira':
-      suggestions.push('Remind me what to enter in Settings for Jira Server')
-      suggestions.push('Log this to Jira: session summary')
+      // Optional integration — only nudge when the user already mentioned Jira/Confluence
+      if (/\bjira\b/i.test(user)) {
+        suggestions.push('Log this to Jira: session summary')
+      }
+      if (/\bconfluence\b/i.test(user)) {
+        suggestions.push('Create a Confluence page with this session summary')
+      }
+      if (!suggestions.length) {
+        suggestions.push('Continue the previous browser task without Jira')
+      }
       break
 
     default:
@@ -223,8 +232,14 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       break
   }
 
-  // Result-aware extras (still on-topic)
-  if (completed && hasSteps && topic !== 'greeting' && topic !== 'price') {
+  // Result-aware extras (still on-topic) — Confluence is optional; only if user asked
+  if (
+    completed &&
+    hasSteps &&
+    topic !== 'greeting' &&
+    topic !== 'price' &&
+    /\bconfluence\b/i.test(user)
+  ) {
     if (hasPdf || hasHtml) {
       suggestions.push('Create a Confluence page with this session summary')
     }

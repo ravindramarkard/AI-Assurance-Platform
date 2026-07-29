@@ -12,11 +12,19 @@ from .llm_factory import effective_settings
 logger = logging.getLogger(__name__)
 
 _JIRA_INTENT = re.compile(
-    r"\b(log|create|file|open|raise|report)\b.{0,48}\b(jira|ticket|issue)\b",
+    r"(?:"
+    # Explicit Jira product name
+    r"\b(?:log|create|file|open|raise|report)\b.{0,48}\bjira\b"
+    r"|"
+    r"\bjira\b.{0,48}\b(?:issue|ticket|bug|log|create|file)\b"
+    r"|"
+    # Generic ticket only when clearly a ticket workflow (not "quality issues")
+    r"\b(?:log|create|file|open|raise|report)\b.{0,48}\bticket\b"
+    r")",
     re.IGNORECASE | re.DOTALL,
 )
 _CONFLUENCE_INTENT = re.compile(
-    r"\b(log|create|publish|post|write|save)\b.{0,48}\bconfluence\b",
+    r"\b(?:log|create|publish|post|write|save)\b.{0,48}\bconfluence\b",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -101,8 +109,9 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
     dep = "cloud" if s["atlassian_deployment"] == "cloud" else "server"
     if not token or (dep == "cloud" and not user):
         return (
-            "Jira/Confluence is not configured yet. Open Settings → Jira & Confluence, "
-            "choose Server (or Cloud), add your base URL, username, and password/PAT, then try again."
+            "Jira/Confluence is optional and is not configured in this workspace. "
+            "You can keep working without it. To enable logging later, open "
+            "Settings → Jira & Confluence and add your Server/Cloud details."
         )
 
     sess = await db.get_session(session_id)
