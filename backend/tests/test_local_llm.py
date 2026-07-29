@@ -65,5 +65,11 @@ class TestResolveTemperature(unittest.TestCase):
         self.assertEqual(resolve_temperature("nope"), 0.1)
 
 
+class TestAgentVisionResolution(unittest.TestCase):
+    def test_cfg_override_true_on_local(self):
+        cfg_override = True
+        self.assertTrue(resolve_use_vision(provider="local", override=cfg_override))
+
+
 if __name__ == "__main__":
     unittest.main()

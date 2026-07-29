@@ -11,6 +11,7 @@ from typing import Any
 from . import db
 from .config import schedular_dir, session_dir
 from .llm_factory import build_llm, effective_settings
+from .local_llm import resolve_use_vision
 from .run_opts import pop_run_opts
 from .ws import bus
 
@@ -656,11 +657,25 @@ async def run_session(session_id: str, task: str) -> None:
             custom_path=cfg.get("browser_executable") or None,
         )
 
+        provider = str(cfg.get("llm_provider") or "local")
+        vision_override = cfg.get("llm_use_vision")  # bool | None
+        if isinstance(vision_override, str):
+            vision_override = vision_override.lower() in ("1", "true", "yes")
+        use_vision = resolve_use_vision(
+            provider=provider,
+            override=vision_override if isinstance(vision_override, bool) else None,
+        )
+        logger.info(
+            "Agent vision provider=%s override=%s effective=%s",
+            provider,
+            vision_override,
+            use_vision,
+        )
         agent_kwargs: dict[str, Any] = {
             "task": task,  # may include Application / Runtime URL preamble
             "llm": llm,
             "browser": browser,
-            "use_vision": True,
+            "use_vision": use_vision,
             "register_new_step_callback": on_step,
             "register_done_callback": on_done,
             "save_conversation_path": str(sdir / "conversation"),
