@@ -1,6 +1,7 @@
 import asyncio
 import unittest
 
+from app.db import hitl_pending_from_json, hitl_pending_to_json
 from app.human_input import HumanInputCancelled, begin_wait, cancel, get_pending, submit
 
 
@@ -46,6 +47,19 @@ class TestHumanInputWaiter(unittest.IsolatedAsyncioTestCase):
 
     def test_submit_without_pending(self):
         self.assertFalse(submit("missing", "x"))
+
+
+class TestHitlPendingJson(unittest.TestCase):
+    def test_roundtrip(self):
+        meta = {"request_id": "a", "prompt": "OTP", "input_type": "otp"}
+        raw = hitl_pending_to_json(meta)
+        self.assertIsInstance(raw, str)
+        self.assertEqual(hitl_pending_from_json(raw), meta)
+
+    def test_none(self):
+        self.assertIsNone(hitl_pending_to_json(None))
+        self.assertIsNone(hitl_pending_from_json(None))
+        self.assertIsNone(hitl_pending_from_json(""))
 
 
 if __name__ == "__main__":

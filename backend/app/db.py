@@ -16,6 +16,37 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def hitl_pending_to_json(meta: dict[str, Any] | None) -> str | None:
+    if not meta:
+        return None
+    return json.dumps(
+        {
+            "request_id": str(meta.get("request_id") or ""),
+            "prompt": str(meta.get("prompt") or ""),
+            "input_type": str(meta.get("input_type") or "text"),
+        }
+    )
+
+
+def hitl_pending_from_json(raw: str | None) -> dict[str, str] | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    rid = str(data.get("request_id") or "").strip()
+    prompt = str(data.get("prompt") or "").strip()
+    if not rid or not prompt:
+        return None
+    itype = str(data.get("input_type") or "text")
+    if itype not in ("otp", "text"):
+        itype = "text"
+    return {"request_id": rid, "prompt": prompt, "input_type": itype}
+
+
 async def get_db() -> aiosqlite.Connection:
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -206,6 +237,7 @@ async def init_db() -> None:
         await _ensure_column(db, "scheduled_jobs", "last_run_id", "TEXT")
         await _ensure_column(db, "sessions", "llm_provider", "TEXT")
         await _ensure_column(db, "scheduled_jobs", "llm_provider", "TEXT")
+        await _ensure_column(db, "sessions", "hitl_pending", "TEXT")
         await db.commit()
 
 
