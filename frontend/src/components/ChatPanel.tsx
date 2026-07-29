@@ -7,9 +7,10 @@ import {
   type Message,
   type Session,
 } from '../api'
-import { looksLikeGeneralChat } from '../chatGate'
 import { suggestFollowUps } from '../followUpPrompts'
 import { usePreferences } from '../preferences'
+import { thoughtCopyText } from '../thoughtCopyText'
+import CopyIconButton from './CopyIconButton'
 import HumanInputBanner from './HumanInputBanner'
 import ScheduleJobModal from './ScheduleJobModal'
 import LogIssueModal from './LogIssueModal'
@@ -745,8 +746,15 @@ export default function ChatPanel({
             const msgKey = `msg-${m.id}-${idx}`
             return m.role === 'user' ? (
               <div key={msgKey} className="flex justify-end">
-                <div className="max-w-2xl accent-fill rounded-2xl rounded-tr-sm px-4 py-3 text-[14px] leading-[1.5] whitespace-pre-wrap">
+                <div className="relative max-w-2xl accent-fill rounded-2xl rounded-tr-sm px-4 py-3 pr-9 text-[14px] leading-[1.5] whitespace-pre-wrap">
                   {m.content}
+                  <div className="absolute bottom-2 right-2">
+                    <CopyIconButton
+                      text={m.content}
+                      title="Copy message"
+                      className="opacity-80 hover:opacity-100"
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -755,18 +763,14 @@ export default function ChatPanel({
                 className="max-w-3xl text-[14px] leading-[1.5] text-slate-300 whitespace-pre-wrap bg-ink-800 border border-line rounded-lg px-4 py-3"
               >
                 {m.content}
-                {!looksLikeGeneralChat(
-                  promptByAssistantId.get(m.id) || session?.task || '',
-                ) && (
-                  <MessageActions
-                    content={m.content}
-                    title={session?.title || session?.task || 'AgentBrowser report'}
-                    prompt={promptByAssistantId.get(m.id) || session?.task || ''}
-                    sessionId={session?.id}
-                    events={events}
-                    onOpenFile={onOpenFile}
-                  />
-                )}
+                <MessageActions
+                  content={m.content}
+                  title={session?.title || session?.task || 'AgentBrowser report'}
+                  prompt={promptByAssistantId.get(m.id) || session?.task || ''}
+                  sessionId={session?.id}
+                  events={events}
+                  onOpenFile={onOpenFile}
+                />
               </div>
             )
           }
@@ -784,6 +788,11 @@ export default function ChatPanel({
 
           const blockKey = `block-${idx}-${item.steps[0]?.id || 'empty'}`
           const thoughtOpen = expandedThought[blockKey] !== false
+          const thoughtClipboard = thoughtCopyText(
+            item.plan,
+            item.thoughtBody,
+            item.note || '',
+          )
 
           // Flatten tool calls in step order for Browser: cards
           const tools: { key: string; step: Event; tool: ToolCall; stepNo: number }[] = []
@@ -820,23 +829,28 @@ export default function ChatPanel({
             <div key={blockKey} className="max-w-3xl space-y-4 text-[14px]">
               {/* Thought for Xs — plan style */}
               <div className="rounded-xl border border-line/80 bg-ink-850/40 overflow-hidden">
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-slate-400 hover:text-slate-200 hover:bg-ink-800/50"
-                  onClick={() =>
-                    setExpandedThought((p) => ({ ...p, [blockKey]: !thoughtOpen }))
-                  }
-                >
-                  <span className="text-slate-500">▹</span>
-                  <span className="font-medium text-[13px] text-slate-300">
-                    Thought for {formatDuration(item.thoughtMs)}
-                  </span>
-                  <span className="text-slate-600">·</span>
-                  <span>
-                    {item.steps.length} steps · {tools.length} tool calls
-                  </span>
-                  <span className="ml-auto text-slate-600">{thoughtOpen ? '▾' : '▸'}</span>
-                </button>
+                <div className="flex items-stretch">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 flex items-center gap-2 px-3 py-2 text-[12px] text-slate-400 hover:text-slate-200 hover:bg-ink-800/50"
+                    onClick={() =>
+                      setExpandedThought((p) => ({ ...p, [blockKey]: !thoughtOpen }))
+                    }
+                  >
+                    <span className="text-slate-500">▹</span>
+                    <span className="font-medium text-[13px] text-slate-300">
+                      Thought for {formatDuration(item.thoughtMs)}
+                    </span>
+                    <span className="text-slate-600">·</span>
+                    <span>
+                      {item.steps.length} steps · {tools.length} tool calls
+                    </span>
+                    <span className="ml-auto text-slate-600">{thoughtOpen ? '▾' : '▸'}</span>
+                  </button>
+                  <div className="flex items-center pr-2">
+                    <CopyIconButton text={thoughtClipboard} title="Copy thought" />
+                  </div>
+                </div>
 
                 {thoughtOpen && (
                   <div className="px-4 pb-3 pt-1 border-t border-line/50 space-y-3">
@@ -875,16 +889,21 @@ export default function ChatPanel({
                     </div>
 
                     <div className="rounded-lg border border-line overflow-hidden bg-ink-950">
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-500 hover:text-slate-300 border-b border-line/60"
-                        onClick={() =>
-                          setExpandedCode((p) => ({ ...p, [key]: !codeOpen }))
-                        }
-                      >
-                        <span className="mono text-slate-400">js</span>
-                        <span className="ml-auto">{codeOpen ? '▾' : '▸'}</span>
-                      </button>
+                      <div className="flex items-stretch border-b border-line/60">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-500 hover:text-slate-300"
+                          onClick={() =>
+                            setExpandedCode((p) => ({ ...p, [key]: !codeOpen }))
+                          }
+                        >
+                          <span className="mono text-slate-400">js</span>
+                          <span className="ml-auto">{codeOpen ? '▾' : '▸'}</span>
+                        </button>
+                        <div className="flex items-center pr-2">
+                          <CopyIconButton text={tool.code} title="Copy code" />
+                        </div>
+                      </div>
                       {codeOpen && (
                         <pre className="px-3 py-3 text-[12px] leading-[1.55] text-slate-200 mono overflow-x-auto scroll whitespace-pre">
                           {tool.code}
@@ -893,8 +912,14 @@ export default function ChatPanel({
                     </div>
 
                     <div className="rounded-lg border border-line/70 bg-ink-850/60 overflow-hidden">
-                      <div className="px-3 py-1.5 text-[11px] font-semibold text-slate-400 border-b border-line/50">
-                        Output
+                      <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold text-slate-400 border-b border-line/50">
+                        <span>Output</span>
+                        <div className="ml-auto">
+                          <CopyIconButton
+                            text={tool.outputLines.join('\n')}
+                            title="Copy output"
+                          />
+                        </div>
                       </div>
                       <div className="px-3 py-2.5 space-y-1">
                         {tool.outputLines.map((line, li) => (
