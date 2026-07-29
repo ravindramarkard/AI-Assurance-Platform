@@ -813,6 +813,8 @@ async def run_session(session_id: str, task: str) -> None:
 
 
 async def control_agent(session_id: str, action: str) -> bool:
+    from . import human_input as hitl
+
     agent = _live.get(session_id)
     try:
         if action == "stop" and not agent:
@@ -822,8 +824,15 @@ async def control_agent(session_id: str, action: str) -> bool:
             sess = await db.get_session(session_id)
             if sess and sess.get("status") == "queued":
                 await cancel_queued(session_id)
-                await db.update_session(session_id, status="stopped")
+                hitl.cancel(session_id)
+                await db.update_session(session_id, hitl_pending=None, status="stopped")
                 await _emit(session_id, "status", {"status": "stopped", "message": "Removed from queue"})
+                return True
+            # Allow stop while waiting_for_input even if agent briefly missing from _live
+            if sess and sess.get("status") == "waiting_for_input":
+                hitl.cancel(session_id)
+                await db.update_session(session_id, hitl_pending=None, status="stopped")
+                await _emit(session_id, "status", {"status": "stopped"})
                 return True
             return False
 
@@ -845,7 +854,8 @@ async def control_agent(session_id: str, action: str) -> bool:
                 agent.stop()
             elif hasattr(agent, "pause"):
                 agent.pause()
-            await db.update_session(session_id, status="stopped")
+            hitl.cancel(session_id)
+            await db.update_session(session_id, hitl_pending=None, status="stopped")
             await _emit(session_id, "status", {"status": "stopped"})
             return True
     except Exception as e:

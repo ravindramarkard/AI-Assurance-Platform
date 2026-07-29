@@ -21,6 +21,11 @@ class SessionControlRequest(BaseModel):
     action: Literal["pause", "resume", "stop"]
 
 
+class HumanInputRequest(BaseModel):
+    value: str = Field(min_length=1)
+    request_id: str | None = None
+
+
 class SettingsUpdate(BaseModel):
     llm_provider: Literal["local", "browser_use", "openai", "anthropic"] | None = None
     llm_base_url: str | None = None

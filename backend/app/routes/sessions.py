@@ -9,12 +9,21 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import db
+from .. import human_input as hitl
 from ..agent_runner import control_agent, follow_up
 from ..browser_factory import stop_browser
 from ..config import session_dir, settings
-from ..models import CreateSessionRequest, MessageRequest, SessionControlRequest
+from ..models import CreateSessionRequest, HumanInputRequest, MessageRequest, SessionControlRequest
 from ..queue import enqueue
 from ..run_opts import set_run_opts
+
+
+def _public_session(session: dict) -> dict:
+    out = dict(session)
+    raw = out.get("hitl_pending")
+    if isinstance(raw, str):
+        out["hitl_pending"] = db.hitl_pending_from_json(raw)
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +176,7 @@ async def get_session(session_id: str):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    return session
+    return _public_session(session)
 
 
 @router.get("/{session_id}/messages")
@@ -189,6 +198,22 @@ async def post_message(session_id: str, body: MessageRequest):
     if not await db.get_session(session_id):
         raise HTTPException(404, "Session not found")
     await follow_up(session_id, body.content)
+    return {"ok": True}
+
+
+@router.post("/{session_id}/human-input")
+async def post_human_input(session_id: str, body: HumanInputRequest):
+    sess = await db.get_session(session_id)
+    if not sess:
+        raise HTTPException(404, "Session not found")
+    if sess.get("status") != "waiting_for_input":
+        raise HTTPException(409, "Session is not waiting for input")
+    value = body.value.strip()
+    if not value:
+        raise HTTPException(400, "Value is required")
+    ok = hitl.submit(session_id, value, body.request_id)
+    if not ok:
+        raise HTTPException(409, "No pending human-input request")
     return {"ok": True}
 
 
