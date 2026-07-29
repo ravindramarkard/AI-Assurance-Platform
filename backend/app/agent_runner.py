@@ -432,6 +432,10 @@ async def run_session(session_id: str, task: str) -> None:
         str(extend_system) if extend_system else None
     )
 
+    from .hitl_message import HITL_SYSTEM_MESSAGE
+
+    extend_system = f"{extend_system}\n\n{HITL_SYSTEM_MESSAGE}"
+
     # Keycloak SSO — append login instructions when configured
     from . import keycloak as keycloak_mod
 
@@ -702,6 +706,84 @@ async def run_session(session_id: str, task: str) -> None:
         if kc_secrets:
             agent_kwargs["sensitive_data"] = kc_secrets
 
+        from browser_use.agent.views import ActionResult
+        from browser_use.tools.service import Tools
+        from pydantic import BaseModel, Field
+
+        from . import human_input as hitl
+
+        class RequestHumanInputParams(BaseModel):
+            prompt: str = Field(..., description="Message shown to the human operator")
+            input_type: str = Field(
+                default="text", description='"otp" or "text"'
+            )
+
+        tools = Tools()
+
+        @tools.action(
+            "Ask the human operator for a value (OTP, MFA code, etc). Blocks until they submit.",
+            param_model=RequestHumanInputParams,
+        )
+        async def request_human_input(params: RequestHumanInputParams) -> ActionResult:
+            itype = params.input_type if params.input_type in ("otp", "text") else "text"
+
+            async def _run_wait() -> tuple[str, str]:
+                return await hitl.begin_wait(session_id, params.prompt, itype)
+
+            wait_task = asyncio.create_task(_run_wait())
+            await asyncio.sleep(0)
+            pending = hitl.get_pending(session_id)
+            if pending:
+                await db.update_session(
+                    session_id,
+                    status="waiting_for_input",
+                    hitl_pending=db.hitl_pending_to_json(pending),
+                )
+                await _emit(
+                    session_id,
+                    "human_input_required",
+                    {
+                        "request_id": pending["request_id"],
+                        "prompt": pending["prompt"],
+                        "input_type": pending["input_type"],
+                    },
+                )
+                await _emit(session_id, "status", {"status": "waiting_for_input"})
+                await db.add_event(
+                    session_id,
+                    "human_input_required",
+                    {
+                        "request_id": pending["request_id"],
+                        "prompt": pending["prompt"],
+                        "input_type": pending["input_type"],
+                    },
+                )
+            try:
+                _rid, value = await wait_task
+            except hitl.HumanInputCancelled as e:
+                return ActionResult(error=f"Human input cancelled ({e.reason})")
+            await db.update_session(session_id, hitl_pending=None, status="running")
+            await _emit(
+                session_id,
+                "status",
+                {"status": "running", "message": "Human input received"},
+            )
+            await db.add_event(
+                session_id,
+                "human_input_resolved",
+                {
+                    "request_id": pending["request_id"] if pending else None,
+                    "redacted": True,
+                },
+            )
+            return ActionResult(
+                extracted_content=value,
+                long_term_memory="Received human input (value redacted from memory display).",
+                include_extracted_content_only_once=True,
+            )
+
+        agent_kwargs["tools"] = tools
+
         agent = Agent(**agent_kwargs)
 
         _live[session_id] = agent
@@ -794,6 +876,13 @@ async def run_session(session_id: str, task: str) -> None:
         await _emit(session_id, "status", {"status": "failed"})
     finally:
         # Always drop the live agent first so a hung cleanup cannot block the queue.
+        from . import human_input as hitl
+
+        hitl.cancel(session_id)
+        try:
+            await db.update_session(session_id, hitl_pending=None)
+        except Exception:
+            pass
         _live.pop(session_id, None)
         stop_preview.set()
         if preview_task is not None:
