@@ -169,12 +169,131 @@ def hoist_reasoning_content(response: Any) -> Any:
     return response
 
 
+def use_vision_for_provider(provider: str | None) -> bool:
+    """Whether browser-use should send screenshots to the LLM.
+
+    Local OpenAI-compatible gateways (e.g. Vitruvian/GLM) often reject image
+    payloads with HTTP 200 ``{"error": "..."}`` which the OpenAI SDK parses into
+    a null-``choices`` ChatCompletion. Keep vision for cloud providers only.
+    """
+    return (provider or "local").strip().lower() in {"openai", "anthropic", "browser_use"}
+
+
+def resolve_use_vision(*, provider: str | None, override: bool | None) -> bool:
+    if override is not None:
+        return bool(override)
+    return use_vision_for_provider(provider)
+
+
+def resolve_temperature(value: Any, *, default: float = 0.1) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        t = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, t))
+
+
+def _fix_missing_choices(resp: Any) -> Any:
+    """Patch responses from non-standard OpenAI-compatible servers (e.g. GLM).
+
+    Some servers return the assistant reply in alternative fields like
+    ``resp.result``, ``resp.output``, or ``resp.data`` instead of the
+    standard ``choices`` array.  This normalises the response so
+    downstream code (browser-use / langchain) sees a valid ``choices``.
+    """
+    from types import SimpleNamespace
+
+    choices = getattr(resp, "choices", None)
+    if choices:
+        return resp
+
+    # Gateway error body (often HTTP 200): {"error": "Failed to connect to Dest API"}
+    # OpenAI SDK still builds a ChatCompletion with choices=None and error set.
+    gateway_error = getattr(resp, "error", None)
+    if not gateway_error and isinstance(resp, dict):
+        gateway_error = resp.get("error")
+    if not gateway_error:
+        raw_dict = getattr(resp, "__dict__", None)
+        if isinstance(raw_dict, dict):
+            gateway_error = raw_dict.get("error")
+    if gateway_error:
+        err_text = str(gateway_error).strip()
+        logger.error("LLM gateway returned error with empty choices: %s", err_text)
+        raise RuntimeError(
+            f"LLM gateway error: {err_text}. "
+            "This often happens when vision/screenshots are sent to a text-only "
+            "GLM/OpenAI-compatible endpoint. Disable vision for local providers, "
+            "or use a vision-capable model."
+        )
+
+    # Try common alternative fields
+    text = None
+    for attr in ("result", "output", "data", "response", "content"):
+        val = getattr(resp, attr, None)
+        if isinstance(val, str) and val.strip():
+            text = val.strip()
+            break
+        if isinstance(val, dict):
+            text = (val.get("content") or val.get("text") or val.get("result") or "").strip()
+            if text:
+                break
+
+    if not text:
+        # Last resort: look in the raw dict if resp is dict-like
+        raw = resp if isinstance(resp, dict) else getattr(resp, "__dict__", {})
+        for k in ("result", "output", "data", "response", "content"):
+            v = raw.get(k)
+            if isinstance(v, str) and v.strip():
+                text = v.strip()
+                break
+
+    if not text:
+        # Log full response for debugging
+        raw_repr = ""
+        try:
+            if isinstance(resp, dict):
+                raw_repr = json.dumps(resp, ensure_ascii=False, default=str)[:1000]
+            elif hasattr(resp, "__dict__"):
+                raw_repr = json.dumps(resp.__dict__, ensure_ascii=False, default=str)[:1000]
+            else:
+                raw_repr = repr(resp)[:1000]
+        except Exception:
+            raw_repr = repr(resp)[:500]
+        logger.error(
+            "LLM response has no `choices` and no recognised alternative field. "
+            "Full response: %s",
+            raw_repr,
+        )
+        raise RuntimeError(
+            "Invalid OpenAI chat completion response: missing or empty `choices`. "
+            "Your GLM server may not be returning an OpenAI-compatible response. "
+            "Check that the endpoint implements /v1/chat/completions correctly. "
+            f"Response dump: {raw_repr[:300]}"
+        )
+
+    logger.info("Local LLM: synthesised choices from non-standard response field (%d chars)", len(text))
+    msg = SimpleNamespace(content=text, reasoning_content=None, role="assistant")
+    choice = SimpleNamespace(message=msg, finish_reason="stop", index=0)
+    resp.choices = [choice]
+    return resp
+
+
 class _CompletionsProxy:
     def __init__(self, inner: Any):
         self._inner = inner
 
     async def create(self, *args: Any, **kwargs: Any) -> Any:
-        resp = await self._inner.create(*args, **kwargs)
+        # Strip parameters that GLM and many local models don't support
+        for unsupported in ("response_format", "tools", "tool_choice", "functions", "function_call"):
+            kwargs.pop(unsupported, None)
+        try:
+            resp = await self._inner.create(*args, **kwargs)
+        except Exception as e:
+            logger.error("LLM create() call failed: %s", e)
+            raise
+        resp = _fix_missing_choices(resp)
         return hoist_reasoning_content(resp)
 
     def __getattr__(self, name: str) -> Any:
@@ -233,7 +352,7 @@ def build_local_chat_openai(
         "remove_defaults_from_schema": True,
         "temperature": 0.1,
         "frequency_penalty": 0.0,
-        "max_completion_tokens": 8192,
+        "max_completion_tokens": 16384,
     }
     if base_url:
         kwargs["base_url"] = base_url
