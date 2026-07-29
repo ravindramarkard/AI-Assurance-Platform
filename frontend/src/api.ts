@@ -44,6 +44,9 @@ export type AppSettings = {
   llm_model: string
   llm_models?: LlmModelsCatalog
   llm_api_key?: string | null
+  llm_use_vision?: boolean | null
+  llm_use_vision_effective?: boolean
+  llm_temperature?: number
   browser_use_api_key?: string | null
   openai_api_key?: string | null
   anthropic_api_key?: string | null
@@ -103,7 +106,6 @@ export type ScheduledJob = {
   task: string
   schedule: SchedulePreset | string
   model?: string | null
-  llm_provider?: string | null
   max_steps: number
   start_url?: string | null
   system_prompt?: string | null
@@ -127,7 +129,6 @@ export type CreateScheduledJobBody = {
   name?: string
   schedule?: SchedulePreset
   model?: string
-  llm_provider?: string
   max_steps?: number
   start_url?: string
   system_prompt?: string
