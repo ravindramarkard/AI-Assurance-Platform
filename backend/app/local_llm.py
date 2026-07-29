@@ -331,6 +331,7 @@ def build_local_chat_openai(
     model: str,
     api_key: str,
     base_url: str | None,
+    temperature: float = 0.1,
 ):
     """ChatOpenAI tuned for LM Studio / Ollama reasoning models."""
     try:
@@ -350,7 +351,7 @@ def build_local_chat_openai(
         "add_schema_to_system_prompt": True,
         "remove_min_items_from_schema": True,
         "remove_defaults_from_schema": True,
-        "temperature": 0.1,
+        "temperature": resolve_temperature(temperature),
         "frequency_penalty": 0.0,
         "max_completion_tokens": 16384,
     }

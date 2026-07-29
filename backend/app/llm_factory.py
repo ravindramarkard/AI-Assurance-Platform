@@ -16,12 +16,16 @@ from .llm_models_catalog import (
 
 async def effective_settings() -> dict[str, Any]:
     """Merge env settings with DB overrides (DB wins when set)."""
+    from .local_llm import resolve_temperature
+
     stored = await db.get_all_settings()
     out: dict[str, Any] = {
         "llm_provider": settings.llm_provider,
         "llm_base_url": settings.llm_base_url,
         "llm_api_key": settings.llm_api_key,
         "llm_model": settings.llm_model,
+        "llm_use_vision": settings.llm_use_vision,  # may be None
+        "llm_temperature": float(settings.llm_temperature),
         "browser_use_api_key": settings.browser_use_api_key,
         "openai_api_key": settings.openai_api_key,
         "anthropic_api_key": settings.anthropic_api_key,
@@ -51,6 +55,10 @@ async def effective_settings() -> dict[str, Any]:
     for k, v in stored.items():
         if k in ("headless", "keycloak_enabled"):
             out[k] = v.lower() in ("1", "true", "yes")
+        elif k == "llm_use_vision":
+            out[k] = v.lower() in ("1", "true", "yes")
+        elif k == "llm_temperature":
+            out[k] = resolve_temperature(v)
         elif k == "max_concurrent_agents":
             try:
                 out[k] = max(1, min(int(v), 8))
@@ -84,15 +92,29 @@ def _mask(key: str | None) -> str | None:
 
 async def public_settings() -> dict[str, Any]:
     from .browser_factory import detect_browsers
+    from .local_llm import resolve_temperature, resolve_use_vision
 
     s = await effective_settings()
+    stored = await db.get_all_settings()
     detected = detect_browsers()
+    provider = str(s.get("llm_provider") or "local")
+    raw_vision = stored.get("llm_use_vision")
+    if raw_vision is None and settings.llm_use_vision is None:
+        vision_public: bool | None = None
+    else:
+        vision_public = bool(s.get("llm_use_vision"))
+    temp = resolve_temperature(s.get("llm_temperature"))
     return {
         "llm_provider": s["llm_provider"],
         "llm_base_url": s["llm_base_url"],
         "llm_model": s["llm_model"],
         "llm_models": normalize_catalog(s.get("llm_models")),
         "llm_api_key": _mask(s.get("llm_api_key")),
+        "llm_use_vision": vision_public,
+        "llm_use_vision_effective": resolve_use_vision(
+            provider=provider, override=vision_public
+        ),
+        "llm_temperature": temp,
         "browser_use_api_key": _mask(s.get("browser_use_api_key")),
         "openai_api_key": _mask(s.get("openai_api_key")),
         "anthropic_api_key": _mask(s.get("anthropic_api_key")),
@@ -161,8 +183,11 @@ async def public_settings() -> dict[str, Any]:
 
 def build_llm(cfg: dict[str, Any]):
     """Construct a browser-use compatible chat model from config."""
+    from .local_llm import build_local_chat_openai, resolve_temperature
+
     provider = cfg.get("llm_provider") or "local"
     model = cfg.get("llm_model") or "local-model"
+    temp = resolve_temperature(cfg.get("llm_temperature"))
 
     if provider == "browser_use":
         key = cfg.get("browser_use_api_key") or os.environ.get("BROWSER_USE_API_KEY", "")
@@ -176,50 +201,42 @@ def build_llm(cfg: dict[str, Any]):
         key = cfg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             os.environ["ANTHROPIC_API_KEY"] = key
-        base_url = str(cfg.get("llm_base_url") or "").strip()
         try:
             from browser_use import ChatAnthropic
         except ImportError:
             from browser_use.llm import ChatAnthropic  # type: ignore
-        if base_url:
-            try:
-                return ChatAnthropic(model=model or "claude-sonnet-4-0", base_url=base_url)
-            except TypeError:
-                # Underlying client might not support base_url; fall back safely.
-                pass
-        return ChatAnthropic(model=model or "claude-sonnet-4-0")
+        try:
+            return ChatAnthropic(model=model or "claude-sonnet-4-0", temperature=temp)
+        except TypeError:
+            return ChatAnthropic(model=model or "claude-sonnet-4-0")
 
     if provider == "openai":
         key = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
         if key:
             os.environ["OPENAI_API_KEY"] = key
-        base_url = str(cfg.get("llm_base_url") or "").strip()
         try:
             from browser_use import ChatOpenAI
         except ImportError:
             from browser_use.llm import ChatOpenAI  # type: ignore
-        if base_url:
-            try:
-                return ChatOpenAI(model=model or "gpt-4o", base_url=base_url)
-            except TypeError:
-                # Underlying client might not support base_url; fall back safely.
-                pass
-        return ChatOpenAI(model=model or "gpt-4o")
+        try:
+            return ChatOpenAI(model=model or "gpt-4o", temperature=temp)
+        except TypeError:
+            return ChatOpenAI(model=model or "gpt-4o")
 
     # local OpenAI-compatible (LM Studio / Ollama)
     # Qwen reasoning models often put AgentOutput JSON in reasoning_content
     # with empty content — LocalChatOpenAI hoists it so browser-use can parse.
-    from .local_llm import build_local_chat_openai
-
     return build_local_chat_openai(
         model=model,
         api_key=str(cfg.get("llm_api_key") or "lm-studio"),
         base_url=cfg.get("llm_base_url"),
+        temperature=temp,
     )
 
 
 async def test_llm_connection(cfg: dict[str, Any]) -> dict[str, Any]:
     """Send a tiny prompt to verify the configured LLM is reachable."""
+    import asyncio
     from browser_use.llm.messages import SystemMessage, UserMessage
 
     provider = str(cfg.get("llm_provider") or "local")
@@ -230,12 +247,23 @@ async def test_llm_connection(cfg: dict[str, Any]) -> dict[str, Any]:
             llm.dont_force_structured_output = True  # type: ignore[attr-defined]
         except Exception:
             pass
-    result = await llm.ainvoke(
-        [
-            SystemMessage(content="Reply with exactly the word: ok"),
-            UserMessage(content="ping"),
-        ]
-    )
+
+    async def _invoke():
+        return await llm.ainvoke(
+            [
+                SystemMessage(content="Reply with exactly the word: ok"),
+                UserMessage(content="ping"),
+            ]
+        )
+
+    try:
+        result = await asyncio.wait_for(_invoke(), timeout=60.0)
+    except asyncio.TimeoutError:
+        raise RuntimeError(
+            f"LLM connection timed out after 60s. "
+            f"Check that your {provider} server at '{cfg.get('llm_base_url')}' is running and reachable."
+        )
+
     text = getattr(result, "completion", None) or getattr(result, "content", None) or result
     reply = str(text or "").strip()
     return {

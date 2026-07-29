@@ -399,6 +399,12 @@ async def set_setting(key: str, value: str) -> None:
         await db.commit()
 
 
+async def delete_setting(key: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+        await db.commit()
+
+
 async def get_all_settings() -> dict[str, str]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

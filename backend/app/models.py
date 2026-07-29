@@ -27,6 +27,9 @@ class SettingsUpdate(BaseModel):
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_models: dict[str, list[str]] | None = None
+    llm_use_vision: bool | None = None
+    llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
+    llm_use_vision_reset: bool | None = None
     browser_use_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None

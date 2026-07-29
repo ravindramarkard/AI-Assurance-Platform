@@ -19,6 +19,8 @@ ALLOWED = {
     "llm_api_key",
     "llm_model",
     "llm_models",
+    "llm_use_vision",
+    "llm_temperature",
     "browser_use_api_key",
     "openai_api_key",
     "anthropic_api_key",
@@ -55,6 +57,9 @@ async def get_settings():
 @router.put("")
 async def update_settings(body: SettingsUpdate):
     data = body.model_dump(exclude_none=True)
+    if body.llm_use_vision_reset:
+        await db.delete_setting("llm_use_vision")
+        data.pop("llm_use_vision", None)
     for k, v in data.items():
         if k not in ALLOWED:
             continue
@@ -64,6 +69,11 @@ async def update_settings(body: SettingsUpdate):
         elif k == "keycloak_enabled":
             await db.set_setting(k, "true" if v else "false")
             env_settings.keycloak_enabled = bool(v)
+        elif k == "llm_use_vision":
+            await db.set_setting(k, "true" if v else "false")
+        elif k == "llm_temperature":
+            t = max(0.0, min(1.0, float(v)))
+            await db.set_setting(k, str(t))
         elif k == "max_concurrent_agents":
             n = max(1, min(int(v), 8))
             await db.set_setting(k, str(n))
