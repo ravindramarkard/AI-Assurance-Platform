@@ -176,20 +176,34 @@ def build_llm(cfg: dict[str, Any]):
         key = cfg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             os.environ["ANTHROPIC_API_KEY"] = key
+        base_url = str(cfg.get("llm_base_url") or "").strip()
         try:
             from browser_use import ChatAnthropic
         except ImportError:
             from browser_use.llm import ChatAnthropic  # type: ignore
+        if base_url:
+            try:
+                return ChatAnthropic(model=model or "claude-sonnet-4-0", base_url=base_url)
+            except TypeError:
+                # Underlying client might not support base_url; fall back safely.
+                pass
         return ChatAnthropic(model=model or "claude-sonnet-4-0")
 
     if provider == "openai":
         key = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
         if key:
             os.environ["OPENAI_API_KEY"] = key
+        base_url = str(cfg.get("llm_base_url") or "").strip()
         try:
             from browser_use import ChatOpenAI
         except ImportError:
             from browser_use.llm import ChatOpenAI  # type: ignore
+        if base_url:
+            try:
+                return ChatOpenAI(model=model or "gpt-4o", base_url=base_url)
+            except TypeError:
+                # Underlying client might not support base_url; fall back safely.
+                pass
         return ChatOpenAI(model=model or "gpt-4o")
 
     # local OpenAI-compatible (LM Studio / Ollama)

@@ -572,9 +572,16 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           </div>
         </fieldset>
 
-        {form.llm_provider === 'local' && (
+        {(form.llm_provider === 'local' ||
+          form.llm_provider === 'openai' ||
+          form.llm_provider === 'anthropic') && (
           <>
             {field('Base URL', 'llm_base_url')}
+          </>
+        )}
+
+        {form.llm_provider === 'local' && (
+          <>
             {field('API key (any non-empty for LM Studio)', 'llm_api_key', 'password', 'lm-studio')}
           </>
         )}
