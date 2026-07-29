@@ -6,7 +6,7 @@ export default function AnalyticsView({ sessions }: { sessions: Session[] }) {
   const completed = sessions.filter((s) => s.status === 'completed').length
   const failed = sessions.filter((s) => s.status === 'failed').length
   const running = sessions.filter((s) =>
-    ['running', 'queued', 'thinking', 'paused'].includes(s.status),
+    ['running', 'queued', 'thinking', 'paused', 'waiting_for_input'].includes(s.status),
   ).length
   const cards = [
     { label: t('totalSessions'), value: sessions.length },

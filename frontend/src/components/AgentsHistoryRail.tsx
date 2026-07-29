@@ -15,6 +15,7 @@ export type AgentsHistoryRailProps = {
 function statusDot(status: string) {
   if (status === 'running' || status === 'thinking') return 'bg-green-400'
   if (status === 'queued') return 'bg-amber-400'
+  if (status === 'waiting_for_input') return 'bg-amber-400'
   if (status === 'failed') return 'bg-red-400'
   if (status === 'paused') return 'bg-yellow-400'
   return 'bg-slate-600'

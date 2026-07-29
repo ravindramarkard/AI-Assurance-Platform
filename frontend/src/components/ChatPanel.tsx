@@ -972,7 +972,11 @@ export default function ChatPanel({
               {session.status === 'queued'
                 ? (() => {
                     const running = (sessions || []).filter(
-                      (s) => s.status === 'running' || s.status === 'thinking' || s.status === 'paused',
+                      (s) =>
+                        s.status === 'running' ||
+                        s.status === 'thinking' ||
+                        s.status === 'paused' ||
+                        s.status === 'waiting_for_input',
                     ).length
                     return running > 0
                       ? `${t('queued')} (${running})`

@@ -24,7 +24,7 @@ function scoreFromSessions(sessions: Session[]) {
   const failed = sessions.filter((s) => s.status === 'failed').length
   const stopped = sessions.filter((s) => s.status === 'stopped').length
   const running = sessions.filter((s) =>
-    ['running', 'queued', 'thinking', 'paused'].includes(s.status),
+    ['running', 'queued', 'thinking', 'paused', 'waiting_for_input'].includes(s.status),
   ).length
 
   const since = weekAgoMs()
@@ -80,7 +80,7 @@ function failRateSafe(failed: number, total: number): number {
 function verdictForSession(s: Session): 'pass' | 'warn' | 'fail' {
   if (s.status === 'completed') return 'pass'
   if (s.status === 'failed') return 'fail'
-  if (s.status === 'stopped' || s.status === 'paused') return 'warn'
+  if (s.status === 'stopped' || s.status === 'paused' || s.status === 'waiting_for_input') return 'warn'
   return 'warn'
 }
 

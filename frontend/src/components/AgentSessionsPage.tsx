@@ -32,7 +32,7 @@ function formatDuration(startIso: string, endIso: string, status: string): strin
   const a = Date.parse(startIso)
   const b = Date.parse(endIso)
   if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return '—'
-  const live = status === 'running' || status === 'queued' || status === 'paused'
+  const live = status === 'running' || status === 'queued' || status === 'paused' || status === 'waiting_for_input'
   const end = live ? Date.now() : b
   let sec = Math.max(0, Math.round((end - a) / 1000))
   if (sec < 60) return `${sec}s`
@@ -56,6 +56,8 @@ function statusLabel(status: string, t: (k: import('../i18n/locales/en').Message
       return t('statusQueued')
     case 'paused':
       return t('statusPaused')
+    case 'waiting_for_input':
+      return t('waitingForInput')
     case 'stopped':
       return t('statusStopped')
     default:
@@ -75,6 +77,8 @@ function statusClass(status: string): string {
       return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
     case 'paused':
       return 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30'
+    case 'waiting_for_input':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
     default:
       return 'bg-slate-500/15 text-slate-400 border-slate-500/30'
   }
