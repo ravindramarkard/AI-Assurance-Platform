@@ -193,7 +193,6 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       if (hasHtml) suggestions.push('Open the HTML report and check the formatting')
       if (hasMd) suggestions.push('Open the markdown file and fill in any empty sections')
       suggestions.push('Download-ready: confirm the saved file contents look correct')
-      suggestions.push('Create a Confluence page with this session summary')
       break
 
     case 'hrm':
