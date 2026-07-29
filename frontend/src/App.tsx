@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, type AppSettings, type Event, type LlmProvider, type Message, type Session } from './api'
+import { api, type AppSettings, type Event, type Message, type Session } from './api'
 import { looksLikeGeneralChat } from './chatGate'
 import {
   THEME_OPTIONS,
@@ -21,7 +21,6 @@ import AgentSessionsPage from './components/AgentSessionsPage'
 import A2AConsolePage from './components/A2AConsolePage'
 import RedTeamConsolePage from './components/RedTeamConsolePage'
 import ApiTestConsolePage from './components/ApiTestConsolePage'
-import ModelPicker from './components/ModelPicker'
 
 const RIGHT_PANEL_MIN = 320
 const RIGHT_PANEL_DEFAULT = 560
@@ -307,7 +306,8 @@ export default function App() {
           ev.type === 'step' ||
           ev.type === 'preview' ||
           ev.type === 'done' ||
-          ev.type === 'error'
+          ev.type === 'error' ||
+          ev.type === 'human_input_required'
         ) {
           api.getSession(sessionId).then(setSession).catch(() => {})
           refreshSessions()
@@ -378,17 +378,11 @@ export default function App() {
     return true
   }, [hadBrowserActivity, events, session, messages])
 
-  const onCreate = async (
-    task: string,
-    model?: string,
-    files?: File[],
-    runtimeUrl?: string,
-    llmProvider?: string,
-  ) => {
+  const onCreate = async (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
     if (llmReady !== true) {
       throw new Error(t('modelNotConnected'))
     }
-    const s = await api.createSession(task, model, files, runtimeUrl, llmProvider)
+    const s = await api.createSession(task, model, files, runtimeUrl)
     await refreshSessions()
     await loadSession(s.id)
     if (files && files.length > 0) {
@@ -603,25 +597,9 @@ export default function App() {
             </span>
           </div>
           <span className="text-slate-600">|</span>
-          <ModelPicker
-            compact
-            catalog={settings?.llm_models}
-            value={{
-              provider: (['local', 'openai', 'anthropic'].includes(settings?.llm_provider || '')
-                ? settings!.llm_provider
-                : 'local') as LlmProvider,
-              model: settings?.llm_model || '',
-            }}
-            onChange={async (next) => {
-              const s = await api.updateSettings({
-                llm_provider: next.provider,
-                llm_model: next.model,
-              })
-              setSettings(s)
-              void probeLlm(s)
-            }}
-            onManageSettings={() => setView('settings')}
-          />
+          <span>{settings?.llm_provider || '—'}</span>
+          <span className="text-slate-600">|</span>
+          <span className="truncate max-w-[140px]">{settings?.llm_model || 'model'}</span>
         </div>
       </header>
 

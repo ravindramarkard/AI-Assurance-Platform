@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, type CreateScheduledJobBody, type Event, type Message, type Session } from '../api'
+import {
+  api,
+  type CreateScheduledJobBody,
+  type Event,
+  type HitlPending,
+  type Message,
+  type Session,
+} from '../api'
 import { looksLikeGeneralChat } from '../chatGate'
 import { suggestFollowUps } from '../followUpPrompts'
 import { usePreferences } from '../preferences'
+import HumanInputBanner from './HumanInputBanner'
 import ScheduleJobModal from './ScheduleJobModal'
 import LogIssueModal from './LogIssueModal'
 import MessageActions from './MessageActions'
@@ -306,6 +314,35 @@ function firstUrlInText(text: string): string | undefined {
   return m?.[0]
 }
 
+function parseHitlPending(session: Session | null, events: Event[]): HitlPending | null {
+  if (!session || session.status !== 'waiting_for_input') return null
+  const raw = session.hitl_pending
+  if (raw && typeof raw === 'object' && raw.request_id && raw.prompt) return raw as HitlPending
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as HitlPending
+      if (p?.request_id && p?.prompt) return p
+    } catch {
+      /* ignore */
+    }
+  }
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]
+    if (e.type === 'human_input_required' && e.payload?.prompt) {
+      return {
+        request_id: String(e.payload.request_id || ''),
+        prompt: String(e.payload.prompt),
+        input_type: String(e.payload.input_type || 'text'),
+      }
+    }
+  }
+  return {
+    request_id: '',
+    prompt: 'Human input required',
+    input_type: 'text',
+  }
+}
+
 export default function ChatPanel({
   session,
   sessions = [],
@@ -331,6 +368,7 @@ export default function ChatPanel({
   const [scheduleToast, setScheduleToast] = useState<string | null>(null)
   const [dismissedFollowUps, setDismissedFollowUps] = useState(false)
   const [stickToBottom, setStickToBottom] = useState(true)
+  const [submittingHitl, setSubmittingHitl] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
@@ -363,7 +401,8 @@ export default function ChatPanel({
       session.status === 'running' ||
       session.status === 'queued' ||
       session.status === 'paused' ||
-      session.status === 'thinking'
+      session.status === 'thinking' ||
+      session.status === 'waiting_for_input'
     ) {
       onControl('stop')
     }
@@ -384,7 +423,9 @@ export default function ChatPanel({
   const thinking =
     session?.status === 'running' ||
     session?.status === 'queued' ||
-    session?.status === 'paused'
+    session?.status === 'paused' ||
+    session?.status === 'waiting_for_input' ||
+    session?.status === 'thinking'
 
   const followUps = useMemo(() => {
     if (!session || thinking || dismissedFollowUps) return []
@@ -550,6 +591,9 @@ export default function ChatPanel({
     )
   }
 
+  const hitlPending = parseHitlPending(session, events)
+  const waitingForInput = session.status === 'waiting_for_input'
+
   return (
     <main className="flex-1 flex flex-col min-w-0 bg-ink-900">
       <div className="h-12 border-b border-line flex items-center px-4 gap-3 flex-shrink-0">
@@ -581,7 +625,7 @@ export default function ChatPanel({
             {session.step_count} {t('steps')}
           </span>
           <span className="px-2 py-0.5 rounded bg-ink-800 border border-line capitalize text-[11px]">
-            {session.status}
+            {session.status === 'waiting_for_input' ? t('waitingForInput') : session.status}
           </span>
           {(session.status === 'running' || session.status === 'thinking') && (
             <>
@@ -633,6 +677,16 @@ export default function ChatPanel({
               </button>
             </>
           )}
+          {waitingForInput && (
+            <button
+              type="button"
+              className="px-2.5 py-1 rounded-md border border-red-900/50 bg-red-950/40 text-red-300 font-medium text-[12px]"
+              onClick={() => onControl('stop')}
+              title={t('stop')}
+            >
+              ■ {t('stop')}
+            </button>
+          )}
           <button
             type="button"
             className="px-2.5 py-1 rounded-md border border-line bg-ink-800 hover:border-slate-500 text-slate-300 font-medium text-[12px]"
@@ -643,6 +697,25 @@ export default function ChatPanel({
           </button>
         </div>
       </div>
+
+      {hitlPending && (
+        <HumanInputBanner
+          pending={hitlPending}
+          busy={submittingHitl}
+          onSubmit={async (value) => {
+            setSubmittingHitl(true)
+            try {
+              await api.submitHumanInput(session.id, {
+                value,
+                request_id: hitlPending.request_id || undefined,
+              })
+            } finally {
+              setSubmittingHitl(false)
+            }
+          }}
+          onStop={() => onControl('stop')}
+        />
+      )}
 
       {scheduleToast && (
         <div className="mx-4 mt-3 text-xs border border-emerald-800/50 bg-emerald-950/40 text-emerald-300 rounded-md px-3 py-2 flex items-center justify-between gap-3">
@@ -907,6 +980,8 @@ export default function ChatPanel({
                   })()
                 : session.status === 'paused'
                   ? t('paused')
+                  : session.status === 'waiting_for_input'
+                    ? t('waitingForInput')
                   : t('thinking')}
             </span>
           </div>
@@ -933,7 +1008,8 @@ export default function ChatPanel({
         {(session.status === 'running' ||
           session.status === 'thinking' ||
           session.status === 'paused' ||
-          session.status === 'queued') && (
+          session.status === 'queued' ||
+          session.status === 'waiting_for_input') && (
           <div
             className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-ink-850 px-3 py-2"
             role="toolbar"
@@ -1036,7 +1112,7 @@ export default function ChatPanel({
           <textarea
             rows={1}
             value={text}
-            disabled={!canSend}
+            disabled={!canSend || waitingForInput}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -1045,7 +1121,11 @@ export default function ChatPanel({
               }
             }}
             placeholder={
-              llmReady === false ? t('modelNotConnected') : t('replyPlaceholder')
+              waitingForInput
+                ? t('waitingForInput')
+                : llmReady === false
+                  ? t('modelNotConnected')
+                  : t('replyPlaceholder')
             }
             className="flex-1 bg-transparent text-[14px] leading-[1.5] text-slate-200 placeholder-slate-500 resize-none outline-none disabled:cursor-not-allowed"
           />
@@ -1065,16 +1145,22 @@ export default function ChatPanel({
               setVoiceErr('')
               setText(next)
             }}
-            disabled={sending || thinking || !canSend}
+            disabled={sending || thinking || !canSend || waitingForInput}
             onError={setVoiceErr}
           />
           <button
             type="button"
             onClick={() => void send()}
-            disabled={sending || !text.trim() || thinking || !canSend}
+            disabled={sending || !text.trim() || thinking || !canSend || waitingForInput}
             className="accent-fill disabled:opacity-40 p-2 rounded-lg"
             title={
-              !canSend ? t('modelNotConnected') : thinking ? t('thinking') : undefined
+              !canSend
+                ? t('modelNotConnected')
+                : waitingForInput
+                  ? t('waitingForInput')
+                  : thinking
+                    ? t('thinking')
+                    : undefined
             }
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1089,7 +1175,6 @@ export default function ChatPanel({
       {scheduleOpen && (
         <ScheduleJobModal
           defaultModel={session.model || ''}
-          defaultProvider={session.llm_provider || 'local'}
           sessions={sessions.length ? sessions : [session]}
           title={t('scheduleModalTitle')}
           subtitle={t('scheduleModalSubtitleChat')}
@@ -1098,7 +1183,6 @@ export default function ChatPanel({
             task: session.task || '',
             name: session.title?.slice(0, 60) || undefined,
             model: session.model || undefined,
-            llmProvider: session.llm_provider || undefined,
             startUrl:
               session.current_url && !session.current_url.startsWith('about:')
                 ? session.current_url
