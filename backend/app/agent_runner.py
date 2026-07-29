@@ -11,7 +11,7 @@ from typing import Any
 from . import db
 from .config import schedular_dir, session_dir
 from .llm_factory import build_llm, effective_settings
-from .local_llm import resolve_use_vision
+from .vision_probe import ensure_vision_for_cfg, needs_live_vision_probe, resolve_vision_mode
 from .run_opts import pop_run_opts
 from .ws import bus
 
@@ -658,19 +658,29 @@ async def run_session(session_id: str, task: str) -> None:
         )
 
         provider = str(cfg.get("llm_provider") or "local")
-        vision_override = cfg.get("llm_use_vision")  # bool | None
-        if isinstance(vision_override, str):
-            vision_override = vision_override.lower() in ("1", "true", "yes")
-        use_vision = resolve_use_vision(
-            provider=provider,
-            override=vision_override if isinstance(vision_override, bool) else None,
+        mode = resolve_vision_mode(
+            str(cfg.get("llm_vision_mode")) if cfg.get("llm_vision_mode") is not None else None
+        )
+        use_vision = await ensure_vision_for_cfg(
+            {**cfg, "llm_vision_mode": mode},
+            force_refresh=False,
+            persist=True,
         )
         logger.info(
-            "Agent vision provider=%s override=%s effective=%s",
+            "Agent vision provider=%s mode=%s effective=%s",
             provider,
-            vision_override,
+            mode,
             use_vision,
         )
+        if mode == "auto" and not use_vision and needs_live_vision_probe(provider):
+            await _emit(
+                session_id,
+                "status",
+                {
+                    "status": "thinking",
+                    "message": "Vision auto-disabled: endpoint rejected image input.",
+                },
+            )
         agent_kwargs: dict[str, Any] = {
             "task": task,  # may include Application / Runtime URL preamble
             "llm": llm,

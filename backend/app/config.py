@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:1234/v1"
     llm_api_key: str = "lm-studio"
     llm_model: str = "local-model"
-    llm_use_vision: bool | None = None  # None = provider default
+    llm_vision_mode: Literal["auto", "on", "off"] = "auto"
     llm_temperature: float = 0.1
 
     browser_use_api_key: str = ""

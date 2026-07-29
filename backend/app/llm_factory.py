@@ -17,15 +17,27 @@ from .llm_models_catalog import (
 async def effective_settings() -> dict[str, Any]:
     """Merge env settings with DB overrides (DB wins when set)."""
     from .local_llm import resolve_temperature
+    from .vision_probe import migrate_llm_use_vision_value, resolve_vision_mode
 
     stored = await db.get_all_settings()
+    # One-time migrate llm_use_vision → llm_vision_mode
+    if "llm_use_vision" in stored and "llm_vision_mode" not in stored:
+        mode = migrate_llm_use_vision_value(stored.get("llm_use_vision"))
+        if mode:
+            await db.set_setting("llm_vision_mode", mode)
+        await db.delete_setting("llm_use_vision")
+        stored = await db.get_all_settings()
+
     out: dict[str, Any] = {
         "llm_provider": settings.llm_provider,
         "llm_base_url": settings.llm_base_url,
         "llm_api_key": settings.llm_api_key,
         "llm_model": settings.llm_model,
-        "llm_use_vision": settings.llm_use_vision,  # may be None
+        "llm_vision_mode": settings.llm_vision_mode,
         "llm_temperature": float(settings.llm_temperature),
+        "llm_vision_probe_ok": None,
+        "llm_vision_probe_at": None,
+        "llm_vision_probe_key": None,
         "browser_use_api_key": settings.browser_use_api_key,
         "openai_api_key": settings.openai_api_key,
         "anthropic_api_key": settings.anthropic_api_key,
@@ -55,10 +67,12 @@ async def effective_settings() -> dict[str, Any]:
     for k, v in stored.items():
         if k in ("headless", "keycloak_enabled"):
             out[k] = v.lower() in ("1", "true", "yes")
-        elif k == "llm_use_vision":
+        elif k == "llm_vision_probe_ok":
             out[k] = v.lower() in ("1", "true", "yes")
         elif k == "llm_temperature":
             out[k] = resolve_temperature(v)
+        elif k == "llm_vision_mode":
+            out[k] = resolve_vision_mode(v)
         elif k == "max_concurrent_agents":
             try:
                 out[k] = max(1, min(int(v), 8))
@@ -66,6 +80,7 @@ async def effective_settings() -> dict[str, Any]:
                 pass
         else:
             out[k] = v
+    out["llm_vision_mode"] = resolve_vision_mode(out.get("llm_vision_mode"))
     raw_models = stored.get("llm_models")
     if raw_models is None:
         catalog = empty_catalog()
@@ -92,28 +107,31 @@ def _mask(key: str | None) -> str | None:
 
 async def public_settings() -> dict[str, Any]:
     from .browser_factory import detect_browsers
-    from .local_llm import resolve_temperature, resolve_use_vision
+    from .local_llm import resolve_temperature
+    from .vision_probe import effective_vision_from_cache, resolve_vision_mode
 
     s = await effective_settings()
-    stored = await db.get_all_settings()
     detected = detect_browsers()
-    provider = str(s.get("llm_provider") or "local")
-    raw_vision = stored.get("llm_use_vision")
-    if raw_vision is None and settings.llm_use_vision is None:
-        vision_public: bool | None = None
-    else:
-        vision_public = bool(s.get("llm_use_vision"))
+    mode = resolve_vision_mode(s.get("llm_vision_mode"))
+    vision_effective = effective_vision_from_cache(s)
+    probe_ok = s.get("llm_vision_probe_ok")
+    if not isinstance(probe_ok, bool):
+        probe_ok = None
     temp = resolve_temperature(s.get("llm_temperature"))
+    # Legacy compat fields
+    legacy_vision = None if mode == "auto" else (mode == "on")
     return {
         "llm_provider": s["llm_provider"],
         "llm_base_url": s["llm_base_url"],
         "llm_model": s["llm_model"],
         "llm_models": normalize_catalog(s.get("llm_models")),
         "llm_api_key": _mask(s.get("llm_api_key")),
-        "llm_use_vision": vision_public,
-        "llm_use_vision_effective": resolve_use_vision(
-            provider=provider, override=vision_public
-        ),
+        "llm_vision_mode": mode,
+        "llm_vision_effective": vision_effective,
+        "llm_vision_probe_ok": probe_ok,
+        "llm_vision_probe_at": s.get("llm_vision_probe_at"),
+        "llm_use_vision": legacy_vision,
+        "llm_use_vision_effective": bool(vision_effective) if vision_effective is not None else False,
         "llm_temperature": temp,
         "browser_use_api_key": _mask(s.get("browser_use_api_key")),
         "openai_api_key": _mask(s.get("openai_api_key")),
@@ -266,9 +284,22 @@ async def test_llm_connection(cfg: dict[str, Any]) -> dict[str, Any]:
 
     text = getattr(result, "completion", None) or getattr(result, "content", None) or result
     reply = str(text or "").strip()
+
+    from .vision_probe import ensure_vision_for_cfg, resolve_vision_mode
+
+    mode = resolve_vision_mode(
+        str(cfg.get("llm_vision_mode")) if cfg.get("llm_vision_mode") is not None else None
+    )
+    vision_supported = await ensure_vision_for_cfg(
+        {**cfg, "llm_vision_mode": mode},
+        force_refresh=True,
+        persist=True,
+    )
     return {
         "ok": True,
         "provider": provider,
         "model": model,
         "reply": reply[:200] if reply else None,
+        "llm_vision_mode": mode,
+        "vision_supported": vision_supported,
     }

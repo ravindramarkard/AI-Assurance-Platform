@@ -44,6 +44,10 @@ export type AppSettings = {
   llm_model: string
   llm_models?: LlmModelsCatalog
   llm_api_key?: string | null
+  llm_vision_mode?: 'auto' | 'on' | 'off'
+  llm_vision_effective?: boolean | null
+  llm_vision_probe_ok?: boolean | null
+  llm_vision_probe_at?: string | null
   llm_use_vision?: boolean | null
   llm_use_vision_effective?: boolean
   llm_temperature?: number
@@ -456,6 +460,7 @@ export const api = {
     llm_base_url?: string
     llm_api_key?: string
     llm_model?: string
+    llm_vision_mode?: string
     openai_api_key?: string
     anthropic_api_key?: string
   }) =>
@@ -464,7 +469,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     }).then((r) =>
-      json<{ ok: boolean; provider?: string; model?: string; reply?: string | null }>(r),
+      json<{
+        ok: boolean
+        provider?: string
+        model?: string
+        reply?: string | null
+        vision_supported?: boolean
+        llm_vision_mode?: string
+      }>(r),
     ),
   browsers: () =>
     fetch('/api/browsers').then((r) =>

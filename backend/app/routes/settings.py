@@ -19,6 +19,7 @@ ALLOWED = {
     "llm_api_key",
     "llm_model",
     "llm_models",
+    "llm_vision_mode",
     "llm_use_vision",
     "llm_temperature",
     "browser_use_api_key",
@@ -58,7 +59,14 @@ async def get_settings():
 async def update_settings(body: SettingsUpdate):
     data = body.model_dump(exclude_none=True)
     if body.llm_use_vision_reset:
+        await db.set_setting("llm_vision_mode", "auto")
         await db.delete_setting("llm_use_vision")
+        data.pop("llm_use_vision", None)
+        data.pop("llm_use_vision_reset", None)
+    # Legacy bool → mode
+    if "llm_use_vision" in data and "llm_vision_mode" not in data:
+        data["llm_vision_mode"] = "on" if data.pop("llm_use_vision") else "off"
+    else:
         data.pop("llm_use_vision", None)
     for k, v in data.items():
         if k not in ALLOWED:
@@ -69,8 +77,13 @@ async def update_settings(body: SettingsUpdate):
         elif k == "keycloak_enabled":
             await db.set_setting(k, "true" if v else "false")
             env_settings.keycloak_enabled = bool(v)
-        elif k == "llm_use_vision":
-            await db.set_setting(k, "true" if v else "false")
+        elif k == "llm_vision_mode":
+            mode = str(v).strip().lower()
+            if mode not in ("auto", "on", "off"):
+                mode = "auto"
+            await db.set_setting(k, mode)
+            if hasattr(env_settings, "llm_vision_mode"):
+                env_settings.llm_vision_mode = mode  # type: ignore[assignment]
         elif k == "llm_temperature":
             t = max(0.0, min(1.0, float(v)))
             await db.set_setting(k, str(t))

@@ -24,7 +24,7 @@ type FormState = {
   llm_base_url: string
   llm_model: string
   llm_api_key: string
-  llm_use_vision: boolean | null
+  llm_vision_mode: 'auto' | 'on' | 'off'
   llm_temperature: number
   browser_use_api_key: string
   openai_api_key: string
@@ -65,7 +65,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     llm_base_url: 'http://localhost:1234/v1',
     llm_model: 'local-model',
     llm_api_key: '',
-    llm_use_vision: null,
+    llm_vision_mode: 'auto',
     llm_temperature: 0.1,
     browser_use_api_key: '',
     openai_api_key: '',
@@ -104,10 +104,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       llm_provider: provider,
       llm_base_url: settings.llm_base_url || f.llm_base_url,
       llm_model: settings.llm_model || f.llm_model,
-      llm_use_vision:
-        settings.llm_use_vision === null || settings.llm_use_vision === undefined
-          ? null
-          : !!settings.llm_use_vision,
+      llm_vision_mode:
+        settings.llm_vision_mode === 'on' || settings.llm_vision_mode === 'off'
+          ? settings.llm_vision_mode
+          : 'auto',
       llm_temperature:
         typeof settings.llm_temperature === 'number' ? settings.llm_temperature : 0.1,
       atlassian_deployment:
@@ -139,6 +139,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         llm_base_url: form.llm_base_url,
         llm_model: form.llm_model,
         llm_temperature: form.llm_temperature,
+        llm_vision_mode: form.llm_vision_mode,
         ui_theme: theme,
         ui_locale: locale,
         atlassian_deployment: form.atlassian_deployment,
@@ -153,11 +154,6 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         keycloak_client_id: form.keycloak_client_id.trim(),
         keycloak_username: form.keycloak_username.trim(),
         keycloak_redirect_uri: form.keycloak_redirect_uri.trim(),
-      }
-      if (form.llm_use_vision === null) {
-        body.llm_use_vision_reset = true
-      } else {
-        body.llm_use_vision = form.llm_use_vision
       }
       if (form.llm_api_key && !form.llm_api_key.includes('••')) body.llm_api_key = form.llm_api_key
       if (form.browser_use_api_key && !form.browser_use_api_key.includes('••'))
@@ -256,14 +252,26 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       ) {
         body.anthropic_api_key = form.anthropic_api_key
       }
-      const r = await api.testLlm(body)
+      const r = await api.testLlm({ ...body, llm_vision_mode: form.llm_vision_mode })
+      const visionBit =
+        typeof r.vision_supported === 'boolean'
+          ? r.vision_supported
+            ? ` · ${t('llmVisionAvailable')}`
+            : ` · ${t('llmVisionUnsupported')}`
+          : ''
       setLlmTestMsg(
         r.ok
           ? `${t('llmConnectionOk')}${r.model ? ` — ${r.model}` : ''}${
               r.reply ? ` · “${r.reply.slice(0, 80)}”` : ''
-            }`
+            }${visionBit}`
           : t('llmConnectionFailed'),
       )
+      try {
+        const s = await api.getSettings()
+        onSaved(s)
+      } catch {
+        /* ignore refresh errors */
+      }
     } catch (e) {
       let err = e instanceof Error ? e.message : t('llmConnectionFailed')
       try {
@@ -502,39 +510,52 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         {field(t('model'), 'llm_model')}
 
         {(() => {
-          const visionOn =
-            form.llm_use_vision === null
-              ? !!settings?.llm_use_vision_effective
-              : !!form.llm_use_vision
           const setTemp = (n: number) =>
             setForm({
               ...form,
               llm_temperature: Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0.1)),
             })
+          const modes: Array<'auto' | 'on' | 'off'> = ['auto', 'on', 'off']
+          const modeLabel = (m: 'auto' | 'on' | 'off') =>
+            m === 'auto' ? t('llmVisionAuto') : m === 'on' ? t('llmVisionOn') : t('llmVisionOff')
+          let status = t('llmVisionNotProbed')
+          if (form.llm_vision_mode === 'auto') {
+            if (settings?.llm_vision_probe_ok === true) status = t('llmVisionAvailable')
+            else if (settings?.llm_vision_probe_ok === false) status = t('llmVisionUnsupported')
+          } else if (form.llm_vision_mode === 'on') {
+            status = t('llmVisionOn')
+          } else {
+            status = t('llmVisionOff')
+          }
           return (
             <div className="mb-4 space-y-3">
               <div>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={visionOn}
-                    onChange={(e) => setForm({ ...form, llm_use_vision: e.target.checked })}
-                    className="rounded border-line"
-                  />
-                  {t('llmVision')}
-                </label>
-                <p className="text-[11px] text-slate-500 mt-1 ml-6">{t('llmVisionHelp')}</p>
-                {form.llm_use_vision !== null && (
-                  <button
-                    type="button"
-                    className="mt-1.5 ml-6 text-[11px] text-bu-400 hover:text-bu-300"
-                    onClick={() => setForm({ ...form, llm_use_vision: null })}
-                  >
-                    {t('llmVisionReset')}
-                  </button>
-                )}
-                {form.llm_provider === 'local' && visionOn && (
-                  <p className="text-[11px] text-amber-400/90 mt-1.5 ml-6">
+                <span className="text-xs text-slate-400 block mb-1.5">{t('llmVision')}</span>
+                <div className="flex gap-1.5" role="radiogroup" aria-label={t('llmVision')}>
+                  {modes.map((m) => {
+                    const active = form.llm_vision_mode === m
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setForm({ ...form, llm_vision_mode: m })}
+                        className={`flex-1 px-2 py-1.5 rounded-md border text-xs transition-colors ${
+                          active
+                            ? 'border-bu-500 bg-bu-500/10 text-slate-100'
+                            : 'border-line bg-ink-800 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        {modeLabel(m)}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">{t('llmVisionHelp')}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{status}</p>
+                {form.llm_provider === 'local' && form.llm_vision_mode === 'on' && (
+                  <p className="text-[11px] text-amber-400/90 mt-1.5">
                     {t('llmVisionLocalWarning')}
                   </p>
                 )}

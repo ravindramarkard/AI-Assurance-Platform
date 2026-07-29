@@ -27,9 +27,10 @@ class SettingsUpdate(BaseModel):
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_models: dict[str, list[str]] | None = None
-    llm_use_vision: bool | None = None
+    llm_vision_mode: Literal["auto", "on", "off"] | None = None
+    llm_use_vision: bool | None = None  # legacy → maps to on/off
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
-    llm_use_vision_reset: bool | None = None
+    llm_use_vision_reset: bool | None = None  # legacy: treat as auto
     browser_use_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -80,6 +81,7 @@ class LlmTestRequest(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
+    llm_vision_mode: Literal["auto", "on", "off"] | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
 
