@@ -1,3 +1,9 @@
+export type HitlPending = {
+  request_id: string
+  prompt: string
+  input_type: 'otp' | 'text' | string
+}
+
 export type Session = {
   id: string
   title: string
@@ -10,6 +16,7 @@ export type Session = {
   error?: string | null
   step_count: number
   current_url?: string | null
+  hitl_pending?: HitlPending | string | null
 }
 
 export type Message = {
@@ -432,6 +439,12 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
+    }).then((r) => json<{ ok: boolean }>(r)),
+  submitHumanInput: (id: string, body: { value: string; request_id?: string }) =>
+    fetch(`/api/sessions/${id}/human-input`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     }).then((r) => json<{ ok: boolean }>(r)),
   listFiles: (id: string) => fetch(`/api/sessions/${id}/files`).then((r) => json<FileEntry[]>(r)),
   readFile: (id: string, path: string) =>
