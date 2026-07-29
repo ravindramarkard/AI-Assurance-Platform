@@ -776,11 +776,9 @@ async def run_session(session_id: str, task: str) -> None:
                     "redacted": True,
                 },
             )
-            return ActionResult(
-                extracted_content=value,
-                long_term_memory="Received human input (value redacted from memory display).",
-                include_extracted_content_only_once=True,
-            )
+            from .hitl_message import human_input_result_payload
+
+            return ActionResult(**human_input_result_payload(value))
 
         agent_kwargs["tools"] = tools
 
