@@ -289,6 +289,27 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     }
   }
 
+  const statusClass = (text: string) => {
+    const lower = text.toLowerCase()
+    if (
+      lower.includes('fail') ||
+      lower.includes('error') ||
+      lower.includes('unable') ||
+      lower.includes('invalid')
+    ) {
+      return 'text-rose-400'
+    }
+    if (
+      lower.includes('ok') ||
+      lower.includes('success') ||
+      lower.startsWith('jira ok') ||
+      lower.startsWith('confluence ok')
+    ) {
+      return 'text-emerald-400'
+    }
+    return 'text-slate-400'
+  }
+
   const navItems: { id: SettingsSection; label: string; blurb: string }[] = [
     { id: 'appearance', label: t('appearance'), blurb: t('appearanceHint') },
     { id: 'consoles', label: t('consolesSection'), blurb: t('consolesSectionHint') },
@@ -685,7 +706,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {llmTesting ? t('testingConnection') : t('testConnection')}
           </button>
           {llmTestMsg && (
-            <span className="text-[11px] text-slate-400 break-all">{llmTestMsg}</span>
+            <span className={`text-[11px] break-all ${statusClass(llmTestMsg)}`}>{llmTestMsg}</span>
           )}
         </div>
                     </div>
@@ -809,7 +830,9 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {t('testKeycloak')}
           </button>
           {keycloakTestMsg && (
-            <p className="text-[11px] text-slate-400 mt-2 break-all">{keycloakTestMsg}</p>
+            <p className={`text-[11px] mt-2 break-all ${statusClass(keycloakTestMsg)}`}>
+              {keycloakTestMsg}
+            </p>
           )}
           <p className="text-[10px] text-slate-500 mt-2">{t('keycloakTestHint')}</p>
                     </div>
@@ -957,7 +980,9 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             >
               {t('testConfluence')}
             </button>
-            {testMsg && <span className="text-[11px] text-slate-400 break-all">{testMsg}</span>}
+            {testMsg && (
+              <span className={`text-[11px] break-all ${statusClass(testMsg)}`}>{testMsg}</span>
+            )}
           </div>
           <p className="mt-2 text-[11px] text-slate-500">{t('chatLogHint')}</p>
                     </div>
@@ -983,7 +1008,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           >
             {saving ? t('saving') : t('saveSettings')}
           </button>
-          {msg && <span className="text-xs text-slate-400">{msg}</span>}
+          {msg && <span className={`text-xs ${statusClass(msg)}`}>{msg}</span>}
         </div>
       </div>
     </main>
