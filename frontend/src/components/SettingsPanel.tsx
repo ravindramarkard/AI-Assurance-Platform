@@ -46,6 +46,8 @@ type FormState = {
   keycloak_redirect_uri: string
 }
 
+type SettingsSection = 'appearance' | 'consoles' | 'llm' | 'keycloak' | 'atlassian'
+
 export default function SettingsPanel({ settings, onSaved }: Props) {
   const {
     theme,
@@ -92,6 +94,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
   const [llmTestMsg, setLlmTestMsg] = useState('')
   const [llmTesting, setLlmTesting] = useState(false)
   const [keycloakTestMsg, setKeycloakTestMsg] = useState('')
+  const [section, setSection] = useState<SettingsSection>('appearance')
 
   useEffect(() => {
     if (!settings) return
@@ -286,14 +289,93 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     }
   }
 
-  return (
-    <main className="flex-1 p-8 bg-ink-900 overflow-y-auto scroll">
-      <h1 className="text-lg font-semibold mb-1">{t('settingsTitle')}</h1>
-      <p className="text-sm text-slate-400 mb-6">{t('settingsBlurb')}</p>
+  const navItems: { id: SettingsSection; label: string; blurb: string }[] = [
+    { id: 'appearance', label: t('appearance'), blurb: t('appearanceHint') },
+    { id: 'consoles', label: t('consolesSection'), blurb: t('consolesSectionHint') },
+    { id: 'llm', label: t('settingsNavLlm'), blurb: t('settingsLlmBlurb') },
+    { id: 'keycloak', label: t('keycloakTitle'), blurb: t('keycloakBlurb') },
+    { id: 'atlassian', label: t('atlassianTitle'), blurb: t('atlassianBlurb') },
+  ]
+  const activeNav = navItems.find((n) => n.id === section) || navItems[0]
 
-      <div className="max-w-lg">
-        <div className="mb-6 border border-line rounded-xl p-4 bg-ink-850">
-          <h2 className="text-sm font-medium text-slate-200 mb-3">{t('appearance')}</h2>
+  return (
+    <main className="flex-1 min-h-0 flex flex-col bg-ink-900">
+      <div className="flex-1 min-h-0 overflow-y-auto scroll">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-8 pb-4">
+          <header className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-100">
+              {t('settingsTitle')}
+            </h1>
+            <p className="text-sm text-slate-400 mt-1 max-w-2xl">{t('settingsBlurb')}</p>
+          </header>
+
+          <div className="md:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-1 px-1">
+            {navItems.map((item) => {
+              const active = section === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSection(item.id)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    active
+                      ? 'border-bu-500 bg-bu-500/15 text-bu-400'
+                      : 'border-line bg-ink-850 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex gap-6 items-start">
+            <nav
+              className="hidden md:block w-48 shrink-0 sticky top-4"
+              aria-label={t('settingsTitle')}
+            >
+              <ul className="space-y-0.5">
+                {navItems.map((item) => {
+                  const active = section === item.id
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSection(item.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors border ${
+                          active
+                            ? 'border-bu-500/40 bg-bu-500/10 text-slate-100 border-s-[3px] border-s-bu-500'
+                            : 'border-transparent text-slate-400 hover:bg-ink-850 hover:text-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </nav>
+
+            <div className="flex-1 min-w-0">
+              <section className="border border-line rounded-xl bg-ink-850/80 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-line bg-ink-850">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-100">{activeNav.label}</h2>
+                      <p className="text-[12px] text-slate-500 mt-1 leading-relaxed">
+                        {activeNav.blurb}
+                      </p>
+                    </div>
+                    {section === 'keycloak' && settings?.keycloak_configured && (
+                      <span className="text-[10px] uppercase tracking-wide text-emerald-400 font-semibold shrink-0 mt-0.5">
+                        {t('configured')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="px-5 py-5">
+                  {section === 'appearance' && (
+                    <div>
           <fieldset className="block mb-4">
             <legend className="text-xs text-slate-400 block mb-1.5">{t('theme')}</legend>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" role="radiogroup" aria-label={t('theme')}>
@@ -426,12 +508,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               })}
             </div>
           </fieldset>
-          <p className="mt-2 text-[11px] text-slate-500">{t('appearanceHint')}</p>
-        </div>
-
-        <div className="mb-6 border border-line rounded-xl p-4 bg-ink-850">
-          <h2 className="text-sm font-medium text-slate-200 mb-1">{t('consolesSection')}</h2>
-          <p className="text-[11px] text-slate-500 mb-3">{t('consolesSectionHint')}</p>
+                    </div>
+                  )}
+                  {section === 'consoles' && (
+                    <div>
           <div className="space-y-2.5">
             {(
               [
@@ -469,8 +549,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               </label>
             ))}
           </div>
-        </div>
-
+                    </div>
+                  )}
+                  {section === 'llm' && (
+                    <div>
         <fieldset className="block mb-4">
           <legend className="text-xs text-slate-400 block mb-1.5">{t('provider')}</legend>
           <div className="space-y-1.5" role="radiogroup" aria-label="Provider">
@@ -606,17 +688,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <span className="text-[11px] text-slate-400 break-all">{llmTestMsg}</span>
           )}
         </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <h2 className="text-sm font-medium text-slate-200">{t('keycloakTitle')}</h2>
-            {settings?.keycloak_configured && (
-              <span className="text-[10px] uppercase tracking-wide text-emerald-400 font-semibold">
-                {t('configured')}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 mb-3">{t('keycloakBlurb')}</p>
+                    </div>
+                  )}
+                  {section === 'keycloak' && (
+                    <div>
           <label className="flex items-center gap-2 mb-3 text-sm text-slate-300">
             <input
               type="checkbox"
@@ -737,11 +812,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             <p className="text-[11px] text-slate-400 mt-2 break-all">{keycloakTestMsg}</p>
           )}
           <p className="text-[10px] text-slate-500 mt-2">{t('keycloakTestHint')}</p>
-        </div>
-
-        <div className="mb-6 border-t border-line pt-5">
-          <h2 className="text-sm font-medium text-slate-200 mb-1">{t('atlassianTitle')}</h2>
-          <p className="text-[11px] text-slate-500 mb-3">{t('atlassianBlurb')}</p>
+                    </div>
+                  )}
+                  {section === 'atlassian' && (
+                    <div>
           <fieldset className="block mb-3">
             <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianDeployment')}</legend>
             <div className="flex flex-wrap gap-2">
@@ -886,22 +960,30 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             {testMsg && <span className="text-[11px] text-slate-400 break-all">{testMsg}</span>}
           </div>
           <p className="mt-2 text-[11px] text-slate-500">{t('chatLogHint')}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+              <p className="mt-4 text-[11px] text-slate-500 leading-relaxed">
+                Local models need tool/function calling and context ≥ 16k. Or edit{' '}
+                <code className="text-slate-400">backend/.env</code> and restart the API.
+              </p>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          className="bg-bu-500 hover:bg-bu-600 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-md text-sm"
-        >
-          {saving ? t('saving') : t('saveSettings')}
-        </button>
-        {msg && <span className="ml-3 text-xs text-slate-400">{msg}</span>}
-
-        <div className="mt-8 text-xs text-slate-500 space-y-2 border-t border-line pt-4">
-          <p>Local models need tool/function calling and context ≥ 16k.</p>
-          <p>
-            Or edit <code className="text-slate-400">backend/.env</code> and restart the API.
-          </p>
+      <div className="shrink-0 border-t border-line bg-ink-900/95 backdrop-blur-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 py-3 flex flex-wrap items-center gap-3 md:ps-[13.5rem]">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="bg-bu-500 hover:bg-bu-600 disabled:opacity-40 text-white font-semibold px-4 py-2 rounded-md text-sm"
+          >
+            {saving ? t('saving') : t('saveSettings')}
+          </button>
+          {msg && <span className="text-xs text-slate-400">{msg}</span>}
         </div>
       </div>
     </main>
