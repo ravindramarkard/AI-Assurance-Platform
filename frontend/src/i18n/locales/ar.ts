@@ -445,6 +445,8 @@ export const ar: Record<MessageKey, string> = {
   appearanceHint: 'يُطبَّق المظهر والخطوط واللغة فورًا وتُحفظ محليًا.',
   consolesSection: 'وحدات الضمان',
   consolesSectionHint: 'إظهار أو إخفاء A2A والفريق الأحمر واختبار API في الشريط الجانبي.',
+  settingsNavLlm: 'نموذج اللغة',
+  settingsLlmBlurb: 'الموفر وبيانات الاعتماد والرؤية ودرجة الحرارة لتشغيل الوكيل.',
   consoleEnabled: 'مفعّل',
   consoleDisabled: 'معطّل',
   logIssue: 'تسجيل مشكلة',

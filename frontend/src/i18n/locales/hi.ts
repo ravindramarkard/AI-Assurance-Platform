@@ -445,6 +445,8 @@ export const hi: Record<MessageKey, string> = {
   appearanceHint: 'थीम, फ़ॉन्ट और भाषा तुरंत लागू होते हैं और स्थानीय रूप से सहेजे जाते हैं।',
   consolesSection: 'आश्वासन कंसोल',
   consolesSectionHint: 'साइडबार में A2A, रेड टीम और API परीक्षण दिखाएँ या छिपाएँ।',
+  settingsNavLlm: 'भाषा मॉडल',
+  settingsLlmBlurb: 'एजेंट रन के लिए प्रदाता, क्रेडेंशियल, विज़न और तापमान।',
   consoleEnabled: 'चालू',
   consoleDisabled: 'बंद',
   logIssue: 'समस्या लॉग करें',
