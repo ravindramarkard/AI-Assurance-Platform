@@ -56,25 +56,47 @@ def _extract_summary(text: str, fallback: str) -> str:
     return (fallback or "Issue from AgentBrowser")[:255]
 
 
+def _norm_auth_type(raw: object) -> str:
+    v = str(raw or "password").strip().lower()
+    return "pat" if v == "pat" else "password"
+
+
 def _cfg(s: dict) -> dict[str, str]:
     dep = str(s.get("atlassian_deployment") or "server").strip().lower()
     if dep not in ("server", "cloud"):
         dep = "server"
-    auth_type = str(s.get("jira_auth_type") or "password").strip().lower()
-    if auth_type not in ("password", "pat"):
-        auth_type = "password"
     return {
         "atlassian_deployment": dep,
-        "jira_auth_type": auth_type,
+        "jira_auth_type": _norm_auth_type(s.get("jira_auth_type")),
         "jira_base_url": str(s.get("jira_base_url") or "").strip(),
         "jira_email": str(s.get("jira_email") or "").strip(),
         "jira_api_token": str(s.get("jira_api_token") or "").strip(),
         "jira_project_key": str(s.get("jira_project_key") or "").strip(),
+        "confluence_auth_type": _norm_auth_type(s.get("confluence_auth_type")),
         "confluence_base_url": str(
             s.get("confluence_base_url") or s.get("jira_base_url") or ""
         ).strip(),
+        "confluence_email": str(s.get("confluence_email") or "").strip(),
+        "confluence_api_token": str(s.get("confluence_api_token") or "").strip(),
         "confluence_space_key": str(s.get("confluence_space_key") or "").strip(),
     }
+
+
+def _product_auth_ok(s: dict[str, str], *, kind: str) -> bool:
+    dep = "cloud" if s["atlassian_deployment"] == "cloud" else "server"
+    if kind == "jira":
+        token, email, auth_type = s["jira_api_token"], s["jira_email"], s["jira_auth_type"]
+    else:
+        token, email, auth_type = (
+            s["confluence_api_token"],
+            s["confluence_email"],
+            s["confluence_auth_type"],
+        )
+    if not token:
+        return False
+    if dep == "cloud":
+        return bool(email)
+    return auth_type == "pat" or bool(email)
 
 
 async def _session_description(session_id: str, extra: str) -> str:
@@ -108,19 +130,7 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
         return None
 
     s = _cfg(await effective_settings())
-    user = atlassian.resolve_auth_username(s)
-    token = s["jira_api_token"]
     dep = "cloud" if s["atlassian_deployment"] == "cloud" else "server"
-    auth_ok = bool(token) and (
-        (dep == "cloud" and bool(s["jira_email"]))
-        or (dep == "server" and (s["jira_auth_type"] == "pat" or bool(s["jira_email"])))
-    )
-    if not auth_ok:
-        return (
-            "Jira/Confluence is optional and is not configured in this workspace. "
-            "You can keep working without it. To enable logging later, open "
-            "Settings → Jira & Confluence and add your Server/Cloud details."
-        )
 
     sess = await db.get_session(session_id)
     fallback_title = (sess or {}).get("title") or (sess or {}).get("task") or "AgentBrowser session"
@@ -128,6 +138,11 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
 
     try:
         if kind == "jira":
+            if not _product_auth_ok(s, kind="jira"):
+                return (
+                    "Jira is optional and is not configured in this workspace. "
+                    "Open Settings → Jira & Confluence to add Jira credentials."
+                )
             if not s["jira_base_url"] or not s["jira_project_key"]:
                 return (
                     "Jira needs a base URL and project key in Settings → Jira & Confluence."
@@ -135,8 +150,8 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
             desc = await _session_description(session_id, summary)
             result = await atlassian.create_jira_issue(
                 base_url=s["jira_base_url"],
-                username=user,
-                token=token,
+                username=atlassian.resolve_auth_username(s),
+                token=s["jira_api_token"],
                 project_key=s["jira_project_key"],
                 summary=summary,
                 description=desc,
@@ -147,6 +162,11 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
             await db.add_event(session_id, "integration", {"service": "jira", **result})
             return f"Logged Jira issue {result['key']}: {result['url']}"
 
+        if not _product_auth_ok(s, kind="confluence"):
+            return (
+                "Confluence is optional and is not configured in this workspace. "
+                "Open Settings → Jira & Confluence to add Confluence credentials."
+            )
         if not s["confluence_base_url"] or not s["confluence_space_key"]:
             return (
                 "Confluence needs a base URL and space key in Settings → Jira & Confluence."
@@ -168,8 +188,8 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
         parts.append("</ul>")
         result = await atlassian.create_confluence_page(
             base_url=s["confluence_base_url"],
-            username=user,
-            token=token,
+            username=atlassian.resolve_confluence_auth_username(s),
+            token=s["confluence_api_token"],
             space_key=s["confluence_space_key"],
             title=summary,
             body_storage="\n".join(parts),

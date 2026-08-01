@@ -49,6 +49,30 @@ class TestAuthHeaders(unittest.TestCase):
             "a@b.com",
         )
 
+    def test_resolve_confluence_pat_clears(self):
+        self.assertEqual(
+            atlassian.resolve_confluence_auth_username(
+                {
+                    "atlassian_deployment": "server",
+                    "confluence_auth_type": "pat",
+                    "confluence_email": "jdoe",
+                }
+            ),
+            "",
+        )
+
+    def test_resolve_confluence_password_keeps(self):
+        self.assertEqual(
+            atlassian.resolve_confluence_auth_username(
+                {
+                    "atlassian_deployment": "server",
+                    "confluence_auth_type": "password",
+                    "confluence_email": "jdoe",
+                }
+            ),
+            "jdoe",
+        )
+
 
 class TestListProjects(unittest.IsolatedAsyncioTestCase):
     async def test_list_jira_projects_parses_and_sorts(self):
@@ -119,10 +143,13 @@ class TestAuthReady(unittest.TestCase):
             "jira_auth_type": "password",
             "jira_email": "",
             "jira_api_token": "x",
+            "confluence_auth_type": "password",
+            "confluence_email": "",
+            "confluence_api_token": "",
         }
-        self.assertFalse(integrations._auth_ready(s))
+        self.assertFalse(integrations._jira_auth_ready(s))
         s["jira_email"] = "jdoe"
-        self.assertTrue(integrations._auth_ready(s))
+        self.assertTrue(integrations._jira_auth_ready(s))
 
     def test_server_pat_token_only(self):
         from app.routes import integrations
@@ -132,8 +159,27 @@ class TestAuthReady(unittest.TestCase):
             "jira_auth_type": "pat",
             "jira_email": "",
             "jira_api_token": "pat-x",
+            "confluence_auth_type": "pat",
+            "confluence_email": "",
+            "confluence_api_token": "pat-c",
         }
-        self.assertTrue(integrations._auth_ready(s))
+        self.assertTrue(integrations._jira_auth_ready(s))
+        self.assertTrue(integrations._confluence_auth_ready(s))
+
+    def test_confluence_auth_independent_of_jira(self):
+        from app.routes import integrations
+
+        s = {
+            "atlassian_deployment": "server",
+            "jira_auth_type": "password",
+            "jira_email": "",
+            "jira_api_token": "",
+            "confluence_auth_type": "pat",
+            "confluence_email": "",
+            "confluence_api_token": "conf-pat",
+        }
+        self.assertFalse(integrations._jira_auth_ready(s))
+        self.assertTrue(integrations._confluence_auth_ready(s))
 
 
 if __name__ == "__main__":

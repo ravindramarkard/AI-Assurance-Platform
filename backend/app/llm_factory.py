@@ -56,7 +56,10 @@ async def effective_settings() -> dict[str, Any]:
         "jira_email": settings.jira_email,
         "jira_api_token": settings.jira_api_token,
         "jira_project_key": settings.jira_project_key,
+        "confluence_auth_type": settings.confluence_auth_type,
         "confluence_base_url": settings.confluence_base_url,
+        "confluence_email": settings.confluence_email,
+        "confluence_api_token": settings.confluence_api_token,
         "confluence_space_key": settings.confluence_space_key,
         "keycloak_enabled": settings.keycloak_enabled,
         "keycloak_base_url": settings.keycloak_base_url,
@@ -167,7 +170,14 @@ async def public_settings() -> dict[str, Any]:
         "jira_email": s.get("jira_email") or "",
         "jira_api_token": _mask(s.get("jira_api_token")),
         "jira_project_key": s.get("jira_project_key") or "",
+        "confluence_auth_type": (
+            "pat"
+            if (s.get("confluence_auth_type") or "").strip().lower() == "pat"
+            else "password"
+        ),
         "confluence_base_url": s.get("confluence_base_url") or "",
+        "confluence_email": s.get("confluence_email") or "",
+        "confluence_api_token": _mask(s.get("confluence_api_token")),
         "confluence_space_key": s.get("confluence_space_key") or "",
         "keycloak_enabled": bool(s.get("keycloak_enabled")),
         "keycloak_base_url": s.get("keycloak_base_url") or "",
@@ -183,6 +193,7 @@ async def public_settings() -> dict[str, Any]:
         "has_openai_api_key": bool(s.get("openai_api_key")),
         "has_anthropic_api_key": bool(s.get("anthropic_api_key")),
         "has_jira_api_token": bool(s.get("jira_api_token")),
+        "has_confluence_api_token": bool(s.get("confluence_api_token")),
         "has_keycloak_password": bool(s.get("keycloak_password")),
         "has_keycloak_client_secret": bool(s.get("keycloak_client_secret")),
         "jira_configured": bool(
@@ -209,15 +220,15 @@ async def public_settings() -> dict[str, Any]:
         ),
         "confluence_configured": bool(
             (s.get("confluence_base_url") or s.get("jira_base_url"))
-            and s.get("jira_api_token")
+            and s.get("confluence_api_token")
             and s.get("confluence_space_key")
             and (
                 (s.get("atlassian_deployment") or "server") == "cloud"
-                and s.get("jira_email")
+                and s.get("confluence_email")
                 or (s.get("atlassian_deployment") or "server") == "server"
                 and (
-                    (s.get("jira_auth_type") or "password") == "pat"
-                    or s.get("jira_email")
+                    (s.get("confluence_auth_type") or "password") == "pat"
+                    or s.get("confluence_email")
                 )
             )
         ),

@@ -69,7 +69,10 @@ class SettingsUpdate(BaseModel):
     jira_email: str | None = None  # username on Server password mode; email on Cloud
     jira_api_token: str | None = None  # password or PAT on Server; API token on Cloud
     jira_project_key: str | None = None
+    confluence_auth_type: Literal["password", "pat"] | None = None
     confluence_base_url: str | None = None
+    confluence_email: str | None = None
+    confluence_api_token: str | None = None
     confluence_space_key: str | None = None
     # Keycloak SSO
     keycloak_enabled: bool | None = None

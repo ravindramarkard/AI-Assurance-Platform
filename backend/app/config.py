@@ -68,7 +68,10 @@ class Settings(BaseSettings):
     jira_email: str = ""  # username (Server password mode) or email (Cloud)
     jira_api_token: str = ""  # password (Server) / PAT (Server) / API token (Cloud)
     jira_project_key: str = ""
+    confluence_auth_type: Literal["password", "pat"] = "password"
     confluence_base_url: str = ""
+    confluence_email: str = ""  # username (Server password) or email (Cloud)
+    confluence_api_token: str = ""
     confluence_space_key: str = ""
 
     # Keycloak — SSO login for Application URL (browser form + optional token test)

@@ -80,16 +80,27 @@ def _confluence_api_root(base: str, deployment: Deployment) -> str:
     return f"{base}/rest/api"
 
 
-def resolve_auth_username(s: dict[str, Any]) -> str:
+def resolve_auth_username(
+    s: dict[str, Any],
+    *,
+    email_key: str = "jira_email",
+    auth_type_key: str = "jira_auth_type",
+) -> str:
     """Username for Atlassian auth: empty for Server PAT-only (Bearer)."""
     dep = str(s.get("atlassian_deployment") or "server").strip().lower()
-    email = str(s.get("jira_email") or "").strip()
+    email = str(s.get(email_key) or "").strip()
     if dep == "cloud":
         return email
-    auth_type = str(s.get("jira_auth_type") or "password").strip().lower()
+    auth_type = str(s.get(auth_type_key) or "password").strip().lower()
     if auth_type == "pat":
         return ""
     return email
+
+
+def resolve_confluence_auth_username(s: dict[str, Any]) -> str:
+    return resolve_auth_username(
+        s, email_key="confluence_email", auth_type_key="confluence_auth_type"
+    )
 
 
 def _key_name_items(raw: Any, *, limit: int = 200) -> list[dict[str, str]]:
