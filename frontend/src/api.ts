@@ -62,6 +62,8 @@ export type AppSettings = {
   openai_api_key?: string | null
   anthropic_api_key?: string | null
   headless: boolean
+  screenshot_archive?: 'always' | 'on_failure' | 'never'
+  screenshot_archive_user_set?: boolean
   browser_engine?: BrowserEngine | string
   browser_executable?: string
   /** Default start URL when a task omits a link (overridable per run). */
@@ -71,6 +73,7 @@ export type AppSettings = {
   ui_theme?: 'dark' | 'light' | 'system' | string
   ui_locale?: 'en' | 'ar' | 'hi' | string
   atlassian_deployment?: 'server' | 'cloud' | string
+  jira_auth_type?: 'password' | 'pat' | string
   jira_base_url?: string
   jira_email?: string
   jira_api_token?: string | null
@@ -534,7 +537,14 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ service }),
-    }).then((r) => json<{ ok: boolean; display_name?: string }>(r)),
+    }).then((r) =>
+      json<{
+        ok: boolean
+        display_name?: string
+        projects?: { key: string; name: string }[]
+        spaces?: { key: string; name: string }[]
+      }>(r),
+    ),
   createJiraIssue: (body: {
     summary: string
     description?: string

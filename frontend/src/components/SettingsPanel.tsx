@@ -30,6 +30,7 @@ type FormState = {
   openai_api_key: string
   anthropic_api_key: string
   atlassian_deployment: 'server' | 'cloud'
+  jira_auth_type: 'password' | 'pat'
   jira_base_url: string
   jira_email: string
   jira_api_token: string
@@ -73,6 +74,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     openai_api_key: '',
     anthropic_api_key: '',
     atlassian_deployment: 'server',
+    jira_auth_type: 'password',
     jira_base_url: '',
     jira_email: '',
     jira_api_token: '',
@@ -95,6 +97,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
   const [llmTesting, setLlmTesting] = useState(false)
   const [keycloakTestMsg, setKeycloakTestMsg] = useState('')
   const [section, setSection] = useState<SettingsSection>('appearance')
+  const [jiraProjects, setJiraProjects] = useState<{ key: string; name: string }[]>([])
+  const [confluenceSpaces, setConfluenceSpaces] = useState<{ key: string; name: string }[]>(
+    [],
+  )
 
   useEffect(() => {
     if (!settings) return
@@ -115,6 +121,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         typeof settings.llm_temperature === 'number' ? settings.llm_temperature : 0.1,
       atlassian_deployment:
         settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
+      jira_auth_type: settings.jira_auth_type === 'pat' ? 'pat' : 'password',
       jira_base_url: settings.jira_base_url || '',
       jira_email: settings.jira_email || '',
       jira_project_key: settings.jira_project_key || '',
@@ -146,8 +153,12 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         ui_theme: theme,
         ui_locale: locale,
         atlassian_deployment: form.atlassian_deployment,
+        jira_auth_type: form.jira_auth_type,
         jira_base_url: form.jira_base_url.trim(),
-        jira_email: form.jira_email.trim(),
+        jira_email:
+          form.atlassian_deployment === 'server' && form.jira_auth_type === 'pat'
+            ? ''
+            : form.jira_email.trim(),
         jira_project_key: form.jira_project_key.trim(),
         confluence_base_url: form.confluence_base_url.trim(),
         confluence_space_key: form.confluence_space_key.trim(),
@@ -184,6 +195,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         keycloak_client_secret: '',
         atlassian_deployment:
           s.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
+        jira_auth_type: s.jira_auth_type === 'pat' ? 'pat' : 'password',
         jira_base_url: s.jira_base_url || '',
         jira_email: s.jira_email || '',
         jira_project_key: s.jira_project_key || '',
@@ -887,25 +899,60 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
             />
           </label>
+          {form.atlassian_deployment === 'server' && (
+            <fieldset className="block mb-3">
+              <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianAuthType')}</legend>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { value: 'password' as const, label: t('atlassianAuthPassword') },
+                    { value: 'pat' as const, label: t('atlassianAuthPat') },
+                  ]
+                ).map((opt) => {
+                  const active = form.jira_auth_type === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setForm({ ...form, jira_auth_type: opt.value })}
+                      className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
+                        active
+                          ? 'border-bu-500 bg-bu-500/10 text-bu-400'
+                          : 'border-line bg-ink-800 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </fieldset>
+          )}
+          {(form.atlassian_deployment === 'cloud' || form.jira_auth_type === 'password') && (
+            <label className="block mb-2">
+              <span className="text-xs text-slate-400 block mb-1">
+                {form.atlassian_deployment === 'server' ? t('atlassianUsername') : t('atlassianEmail')}
+              </span>
+              <input
+                type="text"
+                value={form.jira_email}
+                placeholder={
+                  form.atlassian_deployment === 'server' ? 'jdoe' : 'you@company.com'
+                }
+                onChange={(e) => setForm({ ...form, jira_email: e.target.value })}
+                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+              />
+            </label>
+          )}
           <label className="block mb-2">
             <span className="text-xs text-slate-400 block mb-1">
-              {form.atlassian_deployment === 'server' ? t('atlassianUsername') : t('atlassianEmail')}
-            </span>
-            <input
-              type="text"
-              value={form.jira_email}
-              placeholder={
-                form.atlassian_deployment === 'server' ? 'jdoe' : 'you@company.com'
-              }
-              onChange={(e) => setForm({ ...form, jira_email: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
-            />
-          </label>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">
-              {form.atlassian_deployment === 'server'
-                ? t('atlassianPasswordOrPat')
-                : t('atlassianApiToken')}
+              {form.atlassian_deployment === 'cloud'
+                ? t('atlassianApiToken')
+                : form.jira_auth_type === 'pat'
+                  ? t('atlassianPat')
+                  : t('atlassianPassword')}
             </span>
             <input
               type="password"
@@ -913,9 +960,11 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
               placeholder={
                 settings?.has_jira_api_token
                   ? '••••••••'
-                  : form.atlassian_deployment === 'server'
-                    ? 'Password or personal access token'
-                    : 'API token'
+                  : form.atlassian_deployment === 'cloud'
+                    ? 'API token'
+                    : form.jira_auth_type === 'pat'
+                      ? 'Personal access token'
+                      : 'Password'
               }
               onChange={(e) => setForm({ ...form, jira_api_token: e.target.value })}
               className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
@@ -923,13 +972,28 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           </label>
           <label className="block mb-2">
             <span className="text-xs text-slate-400 block mb-1">{t('jiraProjectKey')}</span>
-            <input
-              type="text"
+            <select
               value={form.jira_project_key}
-              placeholder="PROJ"
+              disabled={jiraProjects.length === 0 && !form.jira_project_key}
               onChange={(e) => setForm({ ...form, jira_project_key: e.target.value })}
-              className="w-40 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono uppercase"
-            />
+              className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+            >
+              <option value="">
+                {jiraProjects.length === 0 ? t('jiraProjectLoadHint') : '—'}
+              </option>
+              {form.jira_project_key &&
+                !jiraProjects.some((p) => p.key === form.jira_project_key) && (
+                  <option value={form.jira_project_key}>{form.jira_project_key}</option>
+                )}
+              {jiraProjects.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.key} — {p.name}
+                </option>
+              ))}
+            </select>
+            {jiraProjects.length === 0 && (
+              <span className="text-[11px] text-slate-500 mt-1 block">{t('jiraProjectLoadHint')}</span>
+            )}
           </label>
           <label className="block mb-2">
             <span className="text-xs text-slate-400 block mb-1">{t('confluenceSiteUrl')}</span>
@@ -943,13 +1007,30 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
           </label>
           <label className="block mb-3">
             <span className="text-xs text-slate-400 block mb-1">{t('confluenceSpaceKey')}</span>
-            <input
-              type="text"
+            <select
               value={form.confluence_space_key}
-              placeholder="TEAM"
+              disabled={confluenceSpaces.length === 0 && !form.confluence_space_key}
               onChange={(e) => setForm({ ...form, confluence_space_key: e.target.value })}
-              className="w-40 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono"
-            />
+              className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+            >
+              <option value="">
+                {confluenceSpaces.length === 0 ? t('confluenceSpaceLoadHint') : '—'}
+              </option>
+              {form.confluence_space_key &&
+                !confluenceSpaces.some((p) => p.key === form.confluence_space_key) && (
+                  <option value={form.confluence_space_key}>{form.confluence_space_key}</option>
+                )}
+              {confluenceSpaces.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.key} — {p.name}
+                </option>
+              ))}
+            </select>
+            {confluenceSpaces.length === 0 && (
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                {t('confluenceSpaceLoadHint')}
+              </span>
+            )}
           </label>
           <div className="flex flex-wrap gap-2 items-center">
             <button
@@ -959,7 +1040,23 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
                 setTestMsg('')
                 void api
                   .testIntegration('jira')
-                  .then((r) => setTestMsg(`Jira OK${r.display_name ? ` — ${r.display_name}` : ''}`))
+                  .then((r) => {
+                    const projects = r.projects || []
+                    setJiraProjects(projects)
+                    setForm((f) => {
+                      const keep = f.jira_project_key
+                      const next =
+                        keep && projects.some((p) => p.key === keep)
+                          ? keep
+                          : keep || projects[0]?.key || ''
+                      return { ...f, jira_project_key: next }
+                    })
+                    setTestMsg(
+                      `Jira OK${r.display_name ? ` — ${r.display_name}` : ''}${
+                        projects.length ? ` · ${projects.length} projects` : ''
+                      }`,
+                    )
+                  })
                   .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
               }}
             >
@@ -972,9 +1069,23 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
                 setTestMsg('')
                 void api
                   .testIntegration('confluence')
-                  .then((r) =>
-                    setTestMsg(`Confluence OK${r.display_name ? ` — ${r.display_name}` : ''}`),
-                  )
+                  .then((r) => {
+                    const spaces = r.spaces || []
+                    setConfluenceSpaces(spaces)
+                    setForm((f) => {
+                      const keep = f.confluence_space_key
+                      const next =
+                        keep && spaces.some((p) => p.key === keep)
+                          ? keep
+                          : keep || spaces[0]?.key || ''
+                      return { ...f, confluence_space_key: next }
+                    })
+                    setTestMsg(
+                      `Confluence OK${r.display_name ? ` — ${r.display_name}` : ''}${
+                        spaces.length ? ` · ${spaces.length} spaces` : ''
+                      }`,
+                    )
+                  })
                   .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
               }}
             >
