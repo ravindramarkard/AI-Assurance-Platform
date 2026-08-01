@@ -7,12 +7,25 @@ export type AgentBrowserConfigurationProps = {
   onSaved: (s: AppSettings) => void
 }
 
+type ScreenshotArchive = 'always' | 'on_failure' | 'never'
+
 type FormState = {
   headless: boolean
+  screenshot_archive: ScreenshotArchive
+  screenshot_archive_user_set: boolean
   browser_engine: BrowserEngine
   browser_executable: string
   application_url: string
   max_concurrent_agents: number
+}
+
+function defaultArchive(headless: boolean): ScreenshotArchive {
+  return headless ? 'on_failure' : 'always'
+}
+
+function normalizeArchive(v: unknown, headless: boolean): ScreenshotArchive {
+  if (v === 'always' || v === 'on_failure' || v === 'never') return v
+  return defaultArchive(headless)
 }
 
 export default function AgentBrowserConfiguration({
@@ -22,6 +35,8 @@ export default function AgentBrowserConfiguration({
   const { t } = usePreferences()
   const [form, setForm] = useState<FormState>({
     headless: true,
+    screenshot_archive: 'on_failure',
+    screenshot_archive_user_set: false,
     browser_engine: 'chromium',
     browser_executable: '',
     application_url: '',
@@ -33,8 +48,11 @@ export default function AgentBrowserConfiguration({
   useEffect(() => {
     if (!settings) return
     const engine = (settings.browser_engine || 'chromium') as BrowserEngine
+    const headless = settings.headless
     setForm({
-      headless: settings.headless,
+      headless,
+      screenshot_archive: normalizeArchive(settings.screenshot_archive, headless),
+      screenshot_archive_user_set: Boolean(settings.screenshot_archive_user_set),
       browser_engine: ['chromium', 'chrome', 'custom'].includes(engine) ? engine : 'chromium',
       browser_executable: settings.browser_executable || '',
       application_url: settings.application_url || '',
@@ -52,11 +70,16 @@ export default function AgentBrowserConfiguration({
         browser_engine: form.browser_engine,
         browser_executable: form.browser_executable.trim(),
         headless: form.headless,
+        screenshot_archive: form.screenshot_archive,
+        screenshot_archive_user_set: form.screenshot_archive_user_set,
       })
       onSaved(s)
       setMsg(t('saved'))
+      const headless = s.headless
       setForm({
-        headless: s.headless,
+        headless,
+        screenshot_archive: normalizeArchive(s.screenshot_archive, headless),
+        screenshot_archive_user_set: Boolean(s.screenshot_archive_user_set),
         browser_engine: (s.browser_engine as BrowserEngine) || form.browser_engine,
         browser_executable: s.browser_executable || '',
         application_url: s.application_url || '',
@@ -197,14 +220,43 @@ export default function AgentBrowserConfiguration({
             <input
               type="checkbox"
               checked={form.headless}
-              onChange={(e) => setForm({ ...form, headless: e.target.checked })}
+              onChange={(e) => {
+                const headless = e.target.checked
+                setForm((prev) => ({
+                  ...prev,
+                  headless,
+                  screenshot_archive: prev.screenshot_archive_user_set
+                    ? prev.screenshot_archive
+                    : defaultArchive(headless),
+                }))
+              }}
             />
             {t('headless')}
           </label>
-          <p className="mt-1.5 text-[11px] text-slate-500">
+          <p className="mt-1.5 text-[11px] text-slate-500 mb-4">
             Chromium uses headless-shell when available. Local Chrome / custom use{' '}
             <code className="text-slate-400">--headless=new</code>.
           </p>
+
+          <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('screenshotArchive')}</span>
+            <select
+              value={form.screenshot_archive}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  screenshot_archive: e.target.value as ScreenshotArchive,
+                  screenshot_archive_user_set: true,
+                })
+              }
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 text-slate-200"
+            >
+              <option value="always">{t('screenshotArchiveAlways')}</option>
+              <option value="on_failure">{t('screenshotArchiveOnFailure')}</option>
+              <option value="never">{t('screenshotArchiveNever')}</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-slate-500">{t('screenshotArchiveHelp')}</p>
         </div>
 
         <button

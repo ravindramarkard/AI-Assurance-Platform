@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, type Event } from '../api'
 import {
   copyText,
+  downloadExcel,
   downloadHtml,
   embedStepScreenshots,
   eventsToReportSteps,
@@ -147,6 +148,21 @@ export default function MessageActions({
         >
           <span aria-hidden>⇩</span>
           {busy === 'pdf' ? 'Preparing…' : 'PDF'}
+        </button>
+        <button
+          type="button"
+          className={btn}
+          disabled={!!busy}
+          onClick={() =>
+            void run('excel', async () => {
+              const meta = await buildMetaWithSteps()
+              downloadExcel(content, meta)
+            })
+          }
+          title="Download test cases as Excel-compatible CSV (proper columns)"
+        >
+          <span aria-hidden>▦</span>
+          {busy === 'excel' ? 'Preparing…' : 'Excel'}
         </button>
       </div>
       {stepCount > 0 && (

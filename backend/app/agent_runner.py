@@ -81,6 +81,12 @@ async def _emit(session_id: str, event_type: str, payload: dict[str, Any]) -> No
 async def _auto_recording_gif(session_id: str, sdir: Path) -> None:
     """Build screenshots/recording.gif from sequential frames (no user click)."""
     try:
+        cfg = await effective_settings()
+        mode = str(cfg.get("screenshot_archive") or "")
+        if mode == "never":
+            logger.debug("skip recording.gif — screenshot_archive=never")
+            return
+
         from .recording_gif import build_recording_gif
 
         meta = await asyncio.to_thread(build_recording_gif, sdir)
@@ -321,10 +327,23 @@ def _screenshot_from_state(browser_state: Any) -> str | None:
     return None
 
 
-async def _save_shot(screenshots: Path, prefix: str, b64: str) -> str | None:
+async def _save_latest(screenshots: Path, b64: str) -> str | None:
+    """Overwrite screenshots/latest.png only (live preview; no numbered archive)."""
     try:
         raw = base64.b64decode(b64)
-        # keep a rolling latest + numbered archive
+        screenshots.mkdir(parents=True, exist_ok=True)
+        (screenshots / "latest.png").write_bytes(raw)
+        return "screenshots/latest.png"
+    except Exception as e:
+        logger.warning("screenshot latest save failed: %s", e)
+        return None
+
+
+async def _save_shot(screenshots: Path, prefix: str, b64: str) -> str | None:
+    """Write latest.png plus a numbered archive file (step_#### / legacy live_####)."""
+    try:
+        raw = base64.b64decode(b64)
+        screenshots.mkdir(parents=True, exist_ok=True)
         latest = screenshots / "latest.png"
         latest.write_bytes(raw)
         n = len(list(screenshots.glob(f"{prefix}_*.png")))
@@ -380,14 +399,17 @@ async def _capture_via_agent(agent: Any) -> tuple[str | None, str | None]:
 
 
 async def _preview_loop(session_id: str, agent: Any, screenshots: Path, stop: asyncio.Event) -> None:
-    """Push live preview frames while the agent runs (independent of step callbacks)."""
+    """Push live preview frames while the agent runs (independent of step callbacks).
+
+    Updates latest.png only — does not archive live_####.png (Artifacts stay lean).
+    """
     # wait briefly for browser to come up
     await asyncio.sleep(1.5)
     while not stop.is_set():
         try:
             url, b64 = await _capture_via_agent(agent)
             if b64:
-                rel = await _save_shot(screenshots, "live", b64)
+                rel = await _save_latest(screenshots, b64)
                 # Prefer path-based previews; include modest b64 only for live WS paint.
                 payload: dict[str, Any] = {"url": url, "screenshot": rel}
                 if len(b64) < 400_000:
@@ -575,14 +597,22 @@ async def run_session(session_id: str, task: str) -> None:
         title = getattr(browser_state, "title", None) if browser_state is not None else None
         screenshot_b64 = _screenshot_from_state(browser_state)
 
-        rel_shot = None
-        if screenshot_b64:
-            rel_shot = await _save_shot(screenshots, "step", screenshot_b64)
-
         thought_fields = _thought_fields(model_output)
         thought = _extract_thought(model_output)
         actions = _extract_actions(model_output)
         written = _files_from_actions(actions, model_output)
+
+        from .screenshot_archive import should_archive_step_screenshot, step_looks_failed
+
+        cfg_now = await effective_settings()
+        mode = str(cfg_now.get("screenshot_archive") or "always")
+        failed = step_looks_failed(actions=actions, thought=thought)
+
+        rel_shot = None
+        if screenshot_b64:
+            await _save_latest(screenshots, screenshot_b64)
+            if should_archive_step_screenshot(mode, failed=failed):
+                rel_shot = await _save_shot(screenshots, "step", screenshot_b64)
 
         # Pick up any new files that appeared in the session workspace
         for path in workspace.rglob("*"):
@@ -619,7 +649,8 @@ async def run_session(session_id: str, task: str) -> None:
             "screenshot": rel_shot,
             "files_written": written,
         }
-        if screenshot_b64 and len(screenshot_b64) < 1_500_000:
+        # Persist large b64 on step events only when archived (Artifacts evidence)
+        if rel_shot and screenshot_b64 and len(screenshot_b64) < 1_500_000:
             payload["screenshot_b64"] = screenshot_b64
         await _emit(session_id, "step", payload)
 
@@ -627,15 +658,13 @@ async def run_session(session_id: str, task: str) -> None:
             await _emit(session_id, "file_written", {"path": fw, "name": Path(fw).name})
 
         if screenshot_b64:
-            await _emit(
-                session_id,
-                "preview",
-                {
-                    "url": url,
-                    "screenshot": rel_shot,
-                    "screenshot_b64": payload.get("screenshot_b64"),
-                },
-            )
+            preview_payload: dict[str, Any] = {
+                "url": url,
+                "screenshot": rel_shot or "screenshots/latest.png",
+            }
+            if len(screenshot_b64) < 400_000:
+                preview_payload["screenshot_b64"] = screenshot_b64
+            await _emit(session_id, "preview", preview_payload)
 
     async def on_done(history: Any) -> None:
         await _emit(

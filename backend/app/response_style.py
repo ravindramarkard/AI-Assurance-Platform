@@ -59,6 +59,17 @@ Say so plainly: "Failed." + reason + 1–3 concrete next options.
 ## Preferred openers
 
 The answer itself · "Found it." · "Done." · "Failed." · "I couldn't, because…" · a direct question when blocked.
+
+## Test reports (when writing report.html / markdown test reports)
+
+Use this structure:
+1. Executive Summary
+2. Test cases table with columns exactly:
+   TC ID | Feature | Test Scenario | Preconditions | Test Steps | Expected Result | Actual Result | Priority
+3. Observations & Recommendations
+
+Fill Actual Result from what you observed; use "Not executed" or "N/A" when unknown.
+Use TC IDs like AB-TC-001. Do not invent outcomes you did not see.
 """.strip()
 
 

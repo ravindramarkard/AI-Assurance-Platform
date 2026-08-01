@@ -251,7 +251,6 @@ export default function ScheduledJobsPage({ settings, onOpenSession, sessions: s
       {modalOpen && (
         <ScheduleJobModal
           defaultModel={settings?.llm_model || ''}
-          defaultProvider={settings?.llm_provider || 'local'}
           sessions={sessions}
           subtitle={t('scheduleModalSubtitle')}
           onClose={() => setModalOpen(false)}

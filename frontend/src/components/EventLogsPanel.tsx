@@ -137,8 +137,14 @@ export default function EventLogsPanel({ events, sessionId }: Props) {
   const [showRawDefault, setShowRawDefault] = useState(false)
 
   const filtered = useMemo(() => {
-    if (filter === 'all') return events
-    return events.filter((e) => bucket(e.type) === filter)
+    const list = filter === 'all' ? events : events.filter((e) => bucket(e.type) === filter)
+    // Newest first so the latest activity is at the top
+    return [...list].sort((a, b) => {
+      const ta = Date.parse(a.created_at || '') || 0
+      const tb = Date.parse(b.created_at || '') || 0
+      if (tb !== ta) return tb - ta
+      return String(b.id ?? '').localeCompare(String(a.id ?? ''))
+    })
   }, [events, filter])
 
   const counts = useMemo(() => {

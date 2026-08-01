@@ -8,7 +8,7 @@ from typing import Any
 
 from PIL import Image
 
-# Prefer live preview frames; fall back to per-step shots.
+# Prefer live preview frames when present (legacy sessions); else per-step shots.
 _FRAME_RE = re.compile(r"^(live|step)_(\d+)\.png$", re.IGNORECASE)
 _MAX_FRAMES = 150
 _MAX_WIDTH = 960
@@ -70,14 +70,14 @@ def build_recording_gif(
     out_name: str = "recording.gif",
 ) -> dict[str, Any]:
     """
-    Write screenshots/recording.gif from live_####.png (or step_####.png) in order.
+    Write screenshots/recording.gif from step_####.png (or legacy live_####.png) in order.
     Returns metadata including relative path under the session.
     """
     shots = session_root / "screenshots"
     frames_paths = _collect_frames(shots)
     if not frames_paths:
         raise FileNotFoundError(
-            "No sequential screenshots found (expected live_0000.png, …)."
+            "No sequential screenshots found (expected step_0000.png, …)."
         )
 
     duration = max(80, min(2000, int(duration_ms)))

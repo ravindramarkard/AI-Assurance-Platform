@@ -240,59 +240,25 @@ def write_html_report(
     spectrum_counts: dict[str, int] | None = None,
     insights: dict[str, Any] | None = None,
 ) -> Path:
-    """Self-contained HTML report with summary, root cause, and solutions."""
+    """Self-contained HTML report: Executive Summary, QA table, Observations."""
+    from .qa_report import (
+        QA_TABLE_HEADERS,
+        build_api_observations,
+        build_api_qa_rows,
+    )
+
     report_dir.mkdir(parents=True, exist_ok=True)
     spectrum_counts = spectrum_counts or {}
     insights = insights or build_run_insights(steps, summary)
 
-    by_flow: dict[str, list[dict[str, Any]]] = {}
-    for step in steps:
-        detail = step.get("detail") if isinstance(step.get("detail"), dict) else step
-        by_flow.setdefault(detail.get("flow") or step.get("flow_name") or "flow", []).append(step)
-
-    rows = []
-    for flow_name, flow_steps in by_flow.items():
-        fails = 0
-        kind = "e2e"
-        for s in flow_steps:
-            detail = s.get("detail") if isinstance(s.get("detail"), dict) else s
-            if (detail.get("status") or s.get("status")) != "pass":
-                fails += 1
-            k = detail.get("kind") or s.get("kind")
-            if k:
-                kind = str(k)
-        lower = flow_name.lower()
-        for key in ("contract", "security", "negative", "edge", "load", "e2e"):
-            if key in lower:
-                kind = key
-                break
-        status = "failed" if fails else "passed"
-        lats = [
-            float((s.get("detail") or s).get("latency_ms") or s.get("latency_ms") or 0)
-            for s in flow_steps
-        ]
-        avg = sum(lats) / len(lats) if lats else 0.0
-        rows.append(
-            {
-                "name": flow_name,
-                "kind": SPECTRUM_LABELS.get(kind, kind),
-                "status": status,
-                "steps": len(flow_steps),
-                "avg_ms": round(avg, 1),
-            }
-        )
+    qa_rows = build_api_qa_rows(steps, base_url=base_url)
+    obs, rec = build_api_observations(insights)
 
     spectrum_cards = "".join(
         f"<div class='card'><div class='k'>{_esc(SPECTRUM_LABELS.get(k, k))}</div>"
         f"<div class='v'>{_esc(v)}</div></div>"
         for k, v in (spectrum_counts or {}).items()
         if k in ("contract", "e2e", "edge", "negative", "security", "load")
-    )
-
-    table_rows = "".join(
-        f"<tr class='{r['status']}'><td>{_esc(r['kind'])}</td><td>{_esc(r['name'])}</td>"
-        f"<td>{_esc(r['status'])}</td><td>{r['steps']}</td><td>{r['avg_ms']}ms</td></tr>"
-        for r in rows
     )
 
     verdict = insights.get("verdict") or "healthy"
@@ -302,35 +268,22 @@ def write_html_report(
         "critical": "bad",
     }.get(str(verdict), "warn")
 
-    theme_cards = ""
-    for t in insights.get("themes") or []:
-        theme_cards += f"""
-        <div class="rca">
-          <div class="rca-title">{_esc(t.get('title'))} <span class="count">×{_esc(t.get('count'))}</span></div>
-          <div class="rca-ep mono">{_esc(t.get('example_endpoint'))}</div>
-          <div class="rca-label">Root cause</div>
-          <div class="rca-body">{_esc(t.get('root_cause'))}</div>
-          <div class="rca-label">Solution</div>
-          <div class="rca-body sol">{_esc(t.get('solution'))}</div>
-        </div>"""
-    if not theme_cards:
-        theme_cards = "<div class='rca'><div class='rca-body'>No failures — no root-cause themes.</div></div>"
+    header_cells = "".join(f"<th>{_esc(h)}</th>" for h in QA_TABLE_HEADERS)
+    body_rows = ""
+    for r in qa_rows:
+        tds = "".join(f"<td>{_esc(r.get(h, ''))}</td>" for h in QA_TABLE_HEADERS)
+        body_rows += f"<tr>{tds}</tr>"
+    if not body_rows:
+        body_rows = (
+            f"<tr><td colspan='{len(QA_TABLE_HEADERS)}' class='muted'>No test cases.</td></tr>"
+        )
 
-    failure_rows = ""
-    for f in insights.get("failures") or []:
-        failure_rows += (
-            f"<tr class='failed'>"
-            f"<td>{_esc(f.get('kind'))}</td>"
-            f"<td class='mono'>{_esc(f.get('endpoint'))}</td>"
-            f"<td>{_esc(f.get('title'))}</td>"
-            f"<td>{_esc(f.get('root_cause'))}</td>"
-            f"<td>{_esc(f.get('solution'))}</td>"
-            f"</tr>"
-        )
-    if not failure_rows:
-        failure_rows = (
-            "<tr><td colspan='5' class='muted'>No failed steps — suite is clean.</td></tr>"
-        )
+    obs_html = "".join(f"<li>{_esc(x)}</li>" for x in obs) or "<li>None</li>"
+    rec_html = "".join(f"<li>{_esc(x)}</li>" for x in rec) or "<li>None</li>"
+
+    passed = summary.get("passed", 0)
+    failed = summary.get("failed", 0)
+    not_exec = max(0, int(summary.get("total", 0) or 0) - int(passed or 0) - int(failed or 0))
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -347,30 +300,23 @@ h2 {{ font-size:16px; margin:28px 0 12px; }}
 .card .k {{ color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }}
 .card .v {{ font-size:26px; font-weight:700; margin-top:6px; }}
 table {{ width:100%; border-collapse:collapse; background:#111827; border:1px solid #1f2937; border-radius:12px; overflow:hidden; }}
-th, td {{ text-align:left; padding:10px 12px; font-size:13px; border-bottom:1px solid #1f2937; vertical-align:top; }}
-th {{ color:#94a3b8; font-size:11px; text-transform:uppercase; }}
-tr.passed td:nth-child(3) {{ color:#6ee7b7; font-weight:600; }}
-tr.failed td:nth-child(3) {{ color:#fca5a5; font-weight:600; }}
+th, td {{ text-align:left; padding:10px 12px; font-size:12px; border-bottom:1px solid #1f2937; vertical-align:top; }}
+th {{ color:#94a3b8; font-size:10px; text-transform:uppercase; }}
 .badge {{ display:inline-block; padding:2px 8px; border-radius:999px; background:#172554; color:#93c5fd; font-size:12px; }}
 .banner {{ border-radius:12px; padding:16px 18px; margin-bottom:20px; border:1px solid; }}
 .banner.ok {{ background:#052e1a; border-color:#166534; color:#bbf7d0; }}
 .banner.warn {{ background:#422006; border-color:#a16207; color:#fde68a; }}
 .banner.bad {{ background:#450a0a; border-color:#b91c1c; color:#fecaca; }}
 .banner .hl {{ font-weight:700; font-size:15px; margin-bottom:6px; }}
-.rca {{ background:#111827; border:1px solid #1f2937; border-radius:12px; padding:14px 16px; margin-bottom:10px; }}
-.rca-title {{ font-weight:700; font-size:14px; margin-bottom:4px; }}
-.rca-title .count {{ color:#94a3b8; font-weight:600; }}
-.rca-ep {{ color:#64748b; font-size:12px; margin-bottom:10px; }}
-.rca-label {{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; margin-top:8px; }}
-.rca-body {{ font-size:13px; color:#cbd5e1; margin-top:4px; line-height:1.45; }}
-.rca-body.sol {{ color:#a7f3d0; }}
 .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; }}
 .muted {{ color:#64748b; }}
 .two {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
 @media (max-width: 900px) {{ .two {{ grid-template-columns:1fr; }} }}
 .panel {{ background:#111827; border:1px solid #1f2937; border-radius:12px; padding:14px 16px; }}
 .panel h3 {{ margin:0 0 8px; font-size:13px; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }}
-.panel p {{ margin:0; font-size:13px; line-height:1.5; color:#e2e8f0; }}
+.panel ul {{ margin:0; padding-left:1.2rem; font-size:13px; line-height:1.5; color:#e2e8f0; }}
+.panel li {{ margin:0.35rem 0; }}
+.counts {{ color:#94a3b8; font-size:13px; margin:0 0 12px; }}
 </style>
 </head>
 <body>
@@ -378,51 +324,41 @@ tr.failed td:nth-child(3) {{ color:#fca5a5; font-weight:600; }}
   <div class="sub">{_esc(project_name)} · <span class="badge">{_esc(run_id)}</span><br/>
   Base: {_esc(base_url)}<br/>OpenAPI: {_esc(openapi_url)}</div>
 
+  <h2>Executive Summary</h2>
   <div class="banner {verdict_cls}">
     <div class="hl">{_esc(insights.get('headline'))}</div>
     <div>{_esc(insights.get('summary'))}</div>
   </div>
-
-  <div class="two" style="margin-bottom:20px">
-    <div class="panel">
-      <h3>Primary root cause</h3>
-      <p>{_esc(insights.get('primary_root_cause'))}</p>
-    </div>
-    <div class="panel">
-      <h3>Recommended solution</h3>
-      <p style="color:#a7f3d0">{_esc(insights.get('primary_solution'))}</p>
-    </div>
-  </div>
+  <p class="counts">Passed: {_esc(passed)} · Failed: {_esc(failed)} · Not executed: {_esc(not_exec)}</p>
 
   <div class="grid">
-    <div class="card"><div class="k">Passed</div><div class="v">{_esc(summary.get('passed', 0))}</div></div>
-    <div class="card"><div class="k">Failed</div><div class="v">{_esc(summary.get('failed', 0))}</div></div>
+    <div class="card"><div class="k">Passed</div><div class="v">{_esc(passed)}</div></div>
+    <div class="card"><div class="k">Failed</div><div class="v">{_esc(failed)}</div></div>
     <div class="card"><div class="k">Pass rate</div><div class="v">{_esc(insights.get('pass_rate', 0))}%</div></div>
     <div class="card"><div class="k">Avg latency</div><div class="v">{_esc(summary.get('avg_latency_ms', 0))}ms</div></div>
     <div class="card"><div class="k">Self-healed</div><div class="v">{_esc(summary.get('self_healed_steps', 0))}</div></div>
   </div>
 
-  <h2>Failure themes — root cause &amp; solution</h2>
-  {theme_cards}
-
-  <h2>Failed steps (detail)</h2>
+  <h2>Test Cases</h2>
   <table>
-    <thead>
-      <tr>
-        <th>Layer</th><th>Endpoint</th><th>Summary</th><th>Root cause</th><th>Solution</th>
-      </tr>
-    </thead>
-    <tbody>{failure_rows}</tbody>
+    <thead><tr>{header_cells}</tr></thead>
+    <tbody>{body_rows}</tbody>
   </table>
 
   <h2>Spectrum coverage</h2>
-  <div class="grid">{spectrum_cards}</div>
+  <div class="grid">{spectrum_cards or "<div class='muted'>No spectrum counts.</div>"}</div>
 
-  <h2>Flows</h2>
-  <table>
-    <thead><tr><th>Layer</th><th>Flow</th><th>Status</th><th>Steps</th><th>Avg</th></tr></thead>
-    <tbody>{table_rows}</tbody>
-  </table>
+  <h2>Observations & Recommendations</h2>
+  <div class="two">
+    <div class="panel">
+      <h3>Observations</h3>
+      <ul>{obs_html}</ul>
+    </div>
+    <div class="panel">
+      <h3>Recommendations</h3>
+      <ul>{rec_html}</ul>
+    </div>
+  </div>
 
   <p class="sub" style="margin-top:24px">
     Allure raw results (including <code>insights.json</code>) are beside this report.

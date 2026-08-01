@@ -1,8 +1,10 @@
+import json
 import unittest
 from types import SimpleNamespace
 
 from app.local_llm import (
     _fix_missing_choices,
+    hoist_reasoning_content,
     resolve_temperature,
     resolve_use_vision,
     use_vision_for_provider,
@@ -69,6 +71,104 @@ class TestAgentVisionResolution(unittest.TestCase):
     def test_cfg_override_true_on_local(self):
         cfg_override = True
         self.assertTrue(resolve_use_vision(provider="local", override=cfg_override))
+
+
+class TestHoistMarkdownFencedJson(unittest.TestCase):
+    """Vitruvian/local models wrap AgentOutput in ```json fences; browser-use needs raw JSON."""
+
+    def test_strips_markdown_json_fence_from_content(self):
+        payload = {
+            "thinking": "need to click",
+            "evaluation_previous_goal": "ok",
+            "memory": "on page",
+            "next_goal": "click",
+            "action": [{"click": {"index": 1}}],
+        }
+        fenced = "```json\n" + json.dumps(payload, indent=2) + "\n```"
+        msg = SimpleNamespace(content=fenced, reasoning_content=None)
+        resp = SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+        hoist_reasoning_content(resp)
+        self.assertTrue(msg.content.strip().startswith("{"), msg.content[:40])
+        parsed = json.loads(msg.content)
+        self.assertEqual(parsed["action"], payload["action"])
+
+
+class TestNormalizeStructuredOutputText(unittest.TestCase):
+    def test_strips_fence_for_any_model(self):
+        from app.local_llm import normalize_structured_output_text
+
+        payload = {
+            "thinking": "t",
+            "evaluation_previous_goal": "ok",
+            "memory": "m",
+            "next_goal": "g",
+            "action": [{"done": {"text": "hi", "success": True}}],
+        }
+        fenced = "```json\n" + json.dumps(payload) + "\n```"
+        out = normalize_structured_output_text(fenced)
+        self.assertIsNotNone(out)
+        self.assertEqual(json.loads(out)["action"], payload["action"])
+
+
+class TestResilientModelValidateJson(unittest.TestCase):
+    def test_validates_fenced_agent_output(self):
+        from pydantic import BaseModel, Field
+
+        from app.local_llm import resilient_model_validate_json
+
+        class MiniOut(BaseModel):
+            thinking: str = ""
+            evaluation_previous_goal: str = ""
+            memory: str = ""
+            next_goal: str = ""
+            action: list[dict] = Field(default_factory=list)
+
+        payload = {
+            "thinking": "t",
+            "evaluation_previous_goal": "ok",
+            "memory": "m",
+            "next_goal": "g",
+            "action": [{"click": {"index": 3}}],
+        }
+        fenced = "```json\n" + json.dumps(payload) + "\n```"
+        parsed = resilient_model_validate_json(MiniOut, fenced)
+        self.assertEqual(parsed.action, payload["action"])
+
+
+class TestWrapLlmForResilientStructuredOutput(unittest.IsolatedAsyncioTestCase):
+    async def test_wrapper_recovers_when_inner_validate_fails_on_fences(self):
+        from pydantic import BaseModel, Field
+
+        from app.local_llm import wrap_llm_for_resilient_structured_output
+        from browser_use.llm.views import ChatInvokeCompletion
+
+        class MiniOut(BaseModel):
+            thinking: str = ""
+            evaluation_previous_goal: str = ""
+            memory: str = ""
+            next_goal: str = ""
+            action: list[dict] = Field(default_factory=list)
+
+        payload = {
+            "thinking": "t",
+            "evaluation_previous_goal": "ok",
+            "memory": "m",
+            "next_goal": "g",
+            "action": [{"click": {"index": 9}}],
+        }
+        fenced = "```json\n" + json.dumps(payload) + "\n```"
+
+        class FakeLlm:
+            model = "any-model"
+
+            async def ainvoke(self, messages, output_format=None, **kwargs):
+                # Mimic browser-use ChatOpenAI: validate raw content as-is
+                parsed = output_format.model_validate_json(fenced)
+                return ChatInvokeCompletion(completion=parsed, usage=None)
+
+        wrapped = wrap_llm_for_resilient_structured_output(FakeLlm())
+        result = await wrapped.ainvoke([], output_format=MiniOut)
+        self.assertEqual(result.completion.action, payload["action"])
 
 
 if __name__ == "__main__":

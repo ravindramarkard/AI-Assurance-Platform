@@ -1,5 +1,14 @@
 /** Client-side copy / HTML / PDF export for assistant messages. */
 
+import {
+  buildAgentObservations,
+  buildAgentQaRows,
+  downloadQaExcel,
+  renderEvidenceHtml,
+  renderObservationsHtml,
+  renderQaTableHtml,
+} from './qaReport'
+
 export type ReportStep = {
   step: number
   url?: string
@@ -315,7 +324,12 @@ export function buildHtmlDocument(
   const prompt = (meta.prompt || '').trim() || '—'
   const timestamp = (meta.timestamp || new Date().toLocaleString()).trim()
   const body = contentToHtmlBody(content)
-  const stepsHtml = stepsToHtml(meta.steps || [])
+  const steps = meta.steps || []
+  const qaRows = buildAgentQaRows(steps, { startUrl: steps[0]?.url, taskTheme: title })
+  const { observations, recommendations } = buildAgentObservations(steps)
+  const qaTableHtml = renderQaTableHtml(qaRows)
+  const observationsHtml = renderObservationsHtml(observations, recommendations)
+  const evidenceHtml = renderEvidenceHtml(steps)
   const brandIcon = `<svg class="ab-icon" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
       <rect x="2" y="4" width="28" height="22" rx="4" fill="#FF7A1A"/>
       <rect x="6" y="8" width="20" height="12" rx="2" fill="#FFF7ED"/>
@@ -346,9 +360,37 @@ export function buildHtmlDocument(
     p { margin: 0 0 0.85rem; }
     ol, ul { margin: 0 0 1rem; padding-left: 1.35rem; }
     li { margin: 0.35rem 0; }
-    .report-body table { width: 100%; border-collapse: collapse; margin: 0.75rem 0 1.25rem; font-size: 0.95rem; }
-    .report-body th, .report-body td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
-    .report-body th { background: #f3f4f6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+    .report-body table { width: 100%; border-collapse: collapse; margin: 0.75rem 0 1.25rem; font-size: 0.85rem; }
+    .report-body th, .report-body td { border: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top; text-align: left; }
+    .report-body th { background: #fff7ed; font-size: 0.72rem; text-transform: uppercase; color: #9a3412; }
+    .qa-table-wrap { width: 100%; overflow-x: auto; margin: 0.75rem 0 1.25rem; }
+    .qa-table {
+      table-layout: fixed;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      line-height: 1.35;
+    }
+    .qa-table th, .qa-table td {
+      border: 1px solid #d1d5db;
+      padding: 5px 6px;
+      vertical-align: top;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .qa-table th {
+      background: #fff7ed;
+      color: #9a3412;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+    .qa-table tbody tr:nth-child(even) td { background: #fafafa; }
+    .qa-obs h3 { font-size: 0.95rem; margin: 0.75rem 0 0.35rem; border: none; }
+    .qa-evidence-grid { display: grid; gap: 12px; }
+    .qa-evidence img { max-width: 100%; border: 1px solid #fed7aa; border-radius: 6px; }
+    .qa-evidence figcaption { font-size: 0.8rem; color: #6b7280; margin-top: 4px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 4px; }
     a { color: #2563eb; }
     .muted { color: #6b7280; font-size: 0.9rem; }
@@ -424,14 +466,20 @@ export function buildHtmlDocument(
     }
     .report-footer .ab-icon { display: inline-block; }
     @media print {
-      @page { margin: 14mm 12mm 16mm; }
-      body { padding: 0 0 28px; max-width: none; }
+      @page { size: landscape; margin: 8mm 8mm 12mm; }
+      body { padding: 0 0 24px; max-width: none; font-size: 10pt; }
       a { color: inherit; text-decoration: none; }
       .report-header { break-inside: avoid; box-shadow: none; }
+      .qa-table-wrap { overflow: visible; }
+      .qa-table { font-size: 7.5pt; }
+      .qa-table th, .qa-table td { padding: 3px 4px; }
+      .qa-table thead { display: table-header-group; }
+      .qa-table tr { break-inside: avoid; page-break-inside: avoid; }
       .step-card { break-inside: avoid; page-break-inside: avoid; background: #fff; }
-      .step-shot img { max-height: 340px; }
+      .step-shot img { max-height: 280px; }
+      .qa-evidence { break-inside: avoid; page-break-inside: avoid; }
       .report-footer {
-        position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 6px 0 0;
+        position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 4px 0 0;
         border-top: 1px solid #fdba74; background: #fff;
       }
     }
@@ -468,9 +516,13 @@ export function buildHtmlDocument(
     </table>
   </header>
   <main class="report-body">
-  <h2>Summary</h2>
+  <h2>Executive Summary</h2>
   ${body}
-  ${stepsHtml}
+  <h2>Test Cases</h2>
+  ${qaTableHtml}
+  <h2>Observations & Recommendations</h2>
+  ${observationsHtml}
+  ${evidenceHtml}
   </main>
   <footer class="report-footer">
     ${brandIcon.replace('class="ab-icon"', 'class="ab-icon ab-icon-sm"')}
@@ -529,6 +581,16 @@ export function downloadHtml(content: string, titleOrMeta: string | ReportMeta) 
     typeof titleOrMeta === 'string' ? titleOrMeta : titleOrMeta.title || 'AgentBrowser report'
   const name = `${slugTitle(title)}.html`
   downloadTextFile(name, buildHtmlDocument(content, titleOrMeta), 'text/html;charset=utf-8')
+}
+
+/** Download QA test-case table as Excel-friendly CSV. */
+export function downloadExcel(content: string, titleOrMeta: string | ReportMeta) {
+  const meta: ReportMeta =
+    typeof titleOrMeta === 'string' ? { title: titleOrMeta } : titleOrMeta || {}
+  const title = (meta.title || 'AgentBrowser report').trim() || 'AgentBrowser report'
+  const steps = meta.steps || []
+  const rows = buildAgentQaRows(steps, { startUrl: steps[0]?.url, taskTheme: title })
+  downloadQaExcel(rows, slugTitle(title))
 }
 
 /**

@@ -284,6 +284,189 @@ async def create_jira_issue(
     }
 
 
+async def search_jira_issues(
+    *,
+    base_url: str,
+    username: str,
+    token: str,
+    jql: str,
+    deployment: Deployment = "server",
+    max_results: int = 20,
+) -> dict[str, Any]:
+    base = _normalize_base(base_url)
+    root = _jira_api_root(base, deployment)
+    jql = (jql or "").strip() or "order by updated DESC"
+    from urllib.parse import quote
+
+    url = f"{root}/search?jql={quote(jql)}&maxResults={max(1, min(max_results, 50))}&fields=summary,status,assignee,updated"
+    data = await _request(
+        "GET",
+        url,
+        username=username,
+        token=token,
+        deployment=deployment,
+    )
+    issues_out: list[dict[str, str]] = []
+    for row in data.get("issues") or []:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        fields = row.get("fields") or {}
+        status = ((fields.get("status") or {}) if isinstance(fields, dict) else {}).get("name") or ""
+        summary = (fields.get("summary") if isinstance(fields, dict) else None) or ""
+        issues_out.append(
+            {
+                "key": key,
+                "summary": str(summary)[:200],
+                "status": str(status),
+                "url": f"{base}/browse/{key}" if key else base,
+            }
+        )
+    return {"ok": True, "jql": jql, "issues": issues_out, "deployment": deployment}
+
+
+async def add_jira_comment(
+    *,
+    base_url: str,
+    username: str,
+    token: str,
+    issue_key: str,
+    body: str,
+    deployment: Deployment = "server",
+) -> dict[str, Any]:
+    base = _normalize_base(base_url)
+    key = (issue_key or "").strip().upper()
+    if not key:
+        raise ValueError("Issue key is required")
+    text = (body or "").strip()
+    if not text:
+        raise ValueError("Comment body is required")
+    root = _jira_api_root(base, deployment)
+    if deployment == "cloud":
+        payload: dict[str, Any] = {
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": text[:30000]}],
+                    }
+                ],
+            }
+        }
+    else:
+        payload = {"body": text[:30000]}
+    data = await _request(
+        "POST",
+        f"{root}/issue/{key}/comment",
+        username=username,
+        token=token,
+        deployment=deployment,
+        json_body=payload,
+    )
+    return {
+        "ok": True,
+        "key": key,
+        "id": data.get("id"),
+        "url": f"{base}/browse/{key}",
+        "deployment": deployment,
+    }
+
+
+async def transition_jira_issue(
+    *,
+    base_url: str,
+    username: str,
+    token: str,
+    issue_key: str,
+    status_name: str,
+    deployment: Deployment = "server",
+) -> dict[str, Any]:
+    base = _normalize_base(base_url)
+    key = (issue_key or "").strip().upper()
+    want = (status_name or "").strip().lower()
+    if not key or not want:
+        raise ValueError("Issue key and status name are required")
+    root = _jira_api_root(base, deployment)
+    meta = await _request(
+        "GET",
+        f"{root}/issue/{key}/transitions",
+        username=username,
+        token=token,
+        deployment=deployment,
+    )
+    transitions = meta.get("transitions") or []
+    match = None
+    for tr in transitions:
+        if not isinstance(tr, dict):
+            continue
+        name = str(tr.get("name") or "").strip().lower()
+        to_name = str(((tr.get("to") or {}) if isinstance(tr.get("to"), dict) else {}).get("name") or "").strip().lower()
+        if want == name or want == to_name or want in name or want in to_name:
+            match = tr
+            break
+    if not match:
+        available = ", ".join(
+            str(t.get("name") or "") for t in transitions if isinstance(t, dict)
+        ) or "(none)"
+        raise ValueError(f"No transition matching “{status_name}”. Available: {available}")
+    await _request(
+        "POST",
+        f"{root}/issue/{key}/transitions",
+        username=username,
+        token=token,
+        deployment=deployment,
+        json_body={"transition": {"id": match.get("id")}},
+    )
+    return {
+        "ok": True,
+        "key": key,
+        "transition": str(match.get("name") or status_name),
+        "url": f"{base}/browse/{key}",
+        "deployment": deployment,
+    }
+
+
+async def attach_confluence_file(
+    *,
+    base_url: str,
+    username: str,
+    token: str,
+    page_id: str,
+    filename: str,
+    content: bytes,
+    deployment: Deployment = "server",
+    content_type: str = "text/html",
+) -> dict[str, Any]:
+    base = _normalize_base(base_url)
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        raise ValueError("Confluence page id is required")
+    if not content:
+        raise ValueError("Attachment content is empty")
+    root = _confluence_api_root(base, deployment)
+    headers = _auth_headers(username, token, deployment=deployment)
+    headers.pop("Content-Type", None)
+    headers["X-Atlassian-Token"] = "no-check"
+    url = f"{root}/content/{page_id}/child/attachment"
+    files = {"file": (filename or "report.html", content, content_type)}
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        resp = await client.post(url, headers=headers, files=files)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Atlassian API {resp.status_code}: {resp.text[:800]}")
+    data = resp.json() if resp.content else {}
+    results = data.get("results") if isinstance(data, dict) else None
+    first = results[0] if isinstance(results, list) and results else data
+    return {
+        "ok": True,
+        "page_id": page_id,
+        "attachment_id": (first or {}).get("id") if isinstance(first, dict) else None,
+        "title": (first or {}).get("title") if isinstance(first, dict) else filename,
+        "deployment": deployment,
+    }
+
+
 async def test_confluence(
     base_url: str,
     username: str,

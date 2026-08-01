@@ -210,9 +210,20 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       // Optional integration — only nudge when the user already mentioned Jira/Confluence
       if (/\bjira\b/i.test(user)) {
         suggestions.push('Log this to Jira: session summary')
+        suggestions.push('Search Jira for open issues')
+        if (/\b[A-Z][A-Z0-9]+-\d+\b/.test(user) || /\b[A-Z][A-Z0-9]+-\d+\b/.test(assistant)) {
+          const key =
+            user.match(/\b([A-Z][A-Z0-9]+-\d+)\b/)?.[1] ||
+            assistant.match(/\b([A-Z][A-Z0-9]+-\d+)\b/)?.[1]
+          if (key) {
+            suggestions.push(`Comment on ${key}: follow-up from AgentBrowser`)
+            suggestions.push(`Set ${key} to Done`)
+          }
+        }
       }
       if (/\bconfluence\b/i.test(user)) {
         suggestions.push('Create a Confluence page with this session summary')
+        suggestions.push('Post result report to Confluence')
       }
       if (!suggestions.length) {
         suggestions.push('Continue the previous browser task without Jira')
@@ -239,6 +250,7 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
     topic !== 'price' &&
     /\bconfluence\b/i.test(user)
   ) {
+    suggestions.push('Post result report to Confluence')
     if (hasPdf || hasHtml) {
       suggestions.push('Create a Confluence page with this session summary')
     }

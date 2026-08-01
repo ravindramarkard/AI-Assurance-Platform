@@ -114,10 +114,109 @@ def wrap_prose_as_done(text: str, thinking: str | None = None) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def normalize_structured_output_text(text: str | None) -> str | None:
+    """Return JSON browser-use can parse from any model reply, or None.
+
+    Provider-agnostic: strips markdown fences, extracts embedded AgentOutput JSON,
+    or wraps a prose final answer as a done action.
+    """
+    if not isinstance(text, str):
+        return None
+    s = text.strip()
+    if not s:
+        return None
+    lifted = extract_agent_json(s)
+    if lifted:
+        return lifted
+    if looks_like_final_answer(s):
+        return wrap_prose_as_done(s)
+    return None
+
+
+def resilient_model_validate_json(model_cls: Any, json_data: Any, **kwargs: Any) -> Any:
+    """Like model_validate_json, but recovers from markdown-fenced / messy model output."""
+    try:
+        return model_cls.model_validate_json(json_data, **kwargs)
+    except Exception as first:
+        raw = json_data.decode("utf-8") if isinstance(json_data, (bytes, bytearray)) else json_data
+        if not isinstance(raw, str):
+            raise first
+        normalized = normalize_structured_output_text(raw)
+        if not normalized or normalized == raw.strip():
+            raise first
+        try:
+            return model_cls.model_validate_json(normalized, **kwargs)
+        except Exception:
+            raise first from None
+
+
+def _validate_with_fallback(original_validate: Any, json_data: Any, **kwargs: Any) -> Any:
+    """Run an already-captured model_validate_json, retrying with normalized text."""
+    try:
+        return original_validate(json_data, **kwargs)
+    except Exception as first:
+        raw = json_data.decode("utf-8") if isinstance(json_data, (bytes, bytearray)) else json_data
+        if not isinstance(raw, str):
+            raise first
+        normalized = normalize_structured_output_text(raw)
+        if not normalized or normalized == raw.strip():
+            raise first
+        try:
+            return original_validate(normalized, **kwargs)
+        except Exception:
+            raise first from None
+
+
+class ResilientStructuredLLM:
+    """Wrap any browser-use chat model so structured-output parsing tolerates messy JSON.
+
+    Patches ``output_format.model_validate_json`` for the duration of ``ainvoke`` so
+    OpenAI, Anthropic, Browser Use, and local OpenAI-compatible models all benefit.
+    """
+
+    def __init__(self, inner: Any):
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_inner"), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_inner":
+            object.__setattr__(self, name, value)
+            return
+        setattr(object.__getattribute__(self, "_inner"), name, value)
+
+    async def ainvoke(self, messages: Any, output_format: Any = None, **kwargs: Any) -> Any:
+        inner = object.__getattribute__(self, "_inner")
+        if output_format is None:
+            return await inner.ainvoke(messages, **kwargs)
+
+        # Capture BEFORE patching so fallback never recurses into this wrapper.
+        original = output_format.model_validate_json
+
+        @classmethod  # type: ignore[misc]
+        def _resilient(cls: Any, json_data: Any, **kw: Any) -> Any:
+            return _validate_with_fallback(original, json_data, **kw)
+
+        output_format.model_validate_json = _resilient
+        try:
+            return await inner.ainvoke(messages, output_format, **kwargs)
+        finally:
+            output_format.model_validate_json = original
+
+
+def wrap_llm_for_resilient_structured_output(llm: Any) -> Any:
+    """Idempotent wrap so every provider gets fence/prose recovery on AgentOutput parse."""
+    if isinstance(llm, ResilientStructuredLLM):
+        return llm
+    return ResilientStructuredLLM(llm)
+
+
 def hoist_reasoning_content(response: Any) -> Any:
     """Normalize local LLM replies into AgentOutput JSON browser-use can parse.
 
     Handles:
+    - JSON wrapped in ```json markdown fences (common with Vitruvian/local models)
     - JSON stuck in reasoning_content while content is empty
     - Prose final answers in content (no tool JSON) — wrap as done so chat gets the reply
     """
@@ -132,7 +231,16 @@ def hoist_reasoning_content(response: Any) -> Any:
             reasoning_s = reasoning if isinstance(reasoning, str) else None
 
             if isinstance(content, str) and content.strip():
-                if extract_agent_json(content) is not None:
+                lifted_content = extract_agent_json(content)
+                if lifted_content is not None:
+                    # Model often wraps AgentOutput in ```json fences; browser-use needs raw JSON.
+                    if lifted_content != content.strip():
+                        logger.info(
+                            "Local LLM: stripped non-JSON wrapper from content (%d → %d chars)",
+                            len(content),
+                            len(lifted_content),
+                        )
+                        msg.content = lifted_content
                     continue
                 lifted = extract_agent_json(reasoning_s)
                 if lifted:
