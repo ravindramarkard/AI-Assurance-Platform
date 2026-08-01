@@ -78,12 +78,12 @@ Use existing `_auth_headers` / `_request`. Cap lists reasonably (e.g. first ~200
 
 ### Test endpoint enrichment
 
-`POST /api/integrations/test` already tests Jira/Confluence. On success:
+`POST /api/integrations/test` already tests Jira/Confluence against **saved** settings (unchanged — user Saves credentials first, then Tests). On success:
 
 - **Jira:** existing myself payload **plus** `projects: [{key, name}, ...]`  
 - **Confluence:** existing current-user payload **plus** `spaces: [{key, name}, ...]`  
 
-Failures stay as today (HTTP error / message); no partial list required.
+Failures stay as today (HTTP error / message); no partial list required. Out of scope: sending unsaved draft credentials in the Test body.
 
 ### Auth readiness
 
