@@ -80,6 +80,106 @@ def _confluence_api_root(base: str, deployment: Deployment) -> str:
     return f"{base}/rest/api"
 
 
+def resolve_auth_username(s: dict[str, Any]) -> str:
+    """Username for Atlassian auth: empty for Server PAT-only (Bearer)."""
+    dep = str(s.get("atlassian_deployment") or "server").strip().lower()
+    email = str(s.get("jira_email") or "").strip()
+    if dep == "cloud":
+        return email
+    auth_type = str(s.get("jira_auth_type") or "password").strip().lower()
+    if auth_type == "pat":
+        return ""
+    return email
+
+
+def _key_name_items(raw: Any, *, limit: int = 200) -> list[dict[str, str]]:
+    rows: list[Any]
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        rows = raw.get("values") or raw.get("results") or []
+    else:
+        rows = []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        name = str(row.get("name") or key).strip() or key
+        out.append({"key": key, "name": name})
+        if len(out) >= limit:
+            break
+    out.sort(key=lambda x: x["key"].lower())
+    return out
+
+
+async def list_jira_projects(
+    base_url: str,
+    username: str,
+    token: str,
+    *,
+    deployment: Deployment = "server",
+    limit: int = 200,
+) -> list[dict[str, str]]:
+    base = _normalize_base(base_url)
+    root = _jira_api_root(base, deployment)
+    if deployment == "cloud":
+        data = await _request(
+            "GET",
+            f"{root}/project/search?maxResults={limit}&startAt=0",
+            username=username,
+            token=token,
+            deployment=deployment,
+        )
+    else:
+        data = await _request(
+            "GET",
+            f"{root}/project",
+            username=username,
+            token=token,
+            deployment=deployment,
+        )
+    return _key_name_items(data, limit=limit)
+
+
+async def list_confluence_spaces(
+    base_url: str,
+    username: str,
+    token: str,
+    *,
+    deployment: Deployment = "server",
+    limit: int = 200,
+) -> list[dict[str, str]]:
+    base = _normalize_base(base_url)
+    root = _confluence_api_root(base, deployment)
+    collected: list[Any] = []
+    start = 0
+    page_size = min(50, limit)
+    while len(collected) < limit:
+        data = await _request(
+            "GET",
+            f"{root}/space?limit={page_size}&start={start}",
+            username=username,
+            token=token,
+            deployment=deployment,
+        )
+        if not isinstance(data, dict):
+            break
+        batch = data.get("results") or []
+        if not isinstance(batch, list) or not batch:
+            break
+        collected.extend(batch)
+        links = data.get("_links") or {}
+        if not links.get("next"):
+            break
+        start += len(batch)
+    return _key_name_items({"results": collected}, limit=limit)
+
+
 async def test_jira(
     base_url: str,
     username: str,
@@ -96,12 +196,16 @@ async def test_jira(
         token=token,
         deployment=deployment,
     )
+    projects = await list_jira_projects(
+        base_url, username, token, deployment=deployment
+    )
     return {
         "ok": True,
         "deployment": deployment,
         "account_id": data.get("accountId") or data.get("key") or data.get("name"),
         "display_name": data.get("displayName"),
         "email": data.get("emailAddress"),
+        "projects": projects,
     }
 
 
@@ -185,11 +289,15 @@ async def test_confluence(
         token=token,
         deployment=deployment,
     )
+    spaces = await list_confluence_spaces(
+        base_url, username, token, deployment=deployment
+    )
     return {
         "ok": True,
         "deployment": deployment,
         "account_id": data.get("accountId") or data.get("userKey") or data.get("username"),
         "display_name": data.get("displayName"),
+        "spaces": spaces,
     }
 
 

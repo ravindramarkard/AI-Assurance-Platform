@@ -60,8 +60,12 @@ def _cfg(s: dict) -> dict[str, str]:
     dep = str(s.get("atlassian_deployment") or "server").strip().lower()
     if dep not in ("server", "cloud"):
         dep = "server"
+    auth_type = str(s.get("jira_auth_type") or "password").strip().lower()
+    if auth_type not in ("password", "pat"):
+        auth_type = "password"
     return {
         "atlassian_deployment": dep,
+        "jira_auth_type": auth_type,
         "jira_base_url": str(s.get("jira_base_url") or "").strip(),
         "jira_email": str(s.get("jira_email") or "").strip(),
         "jira_api_token": str(s.get("jira_api_token") or "").strip(),
@@ -104,10 +108,14 @@ async def try_integration_from_chat(session_id: str, content: str) -> str | None
         return None
 
     s = _cfg(await effective_settings())
-    user = s["jira_email"]
+    user = atlassian.resolve_auth_username(s)
     token = s["jira_api_token"]
     dep = "cloud" if s["atlassian_deployment"] == "cloud" else "server"
-    if not token or (dep == "cloud" and not user):
+    auth_ok = bool(token) and (
+        (dep == "cloud" and bool(s["jira_email"]))
+        or (dep == "server" and (s["jira_auth_type"] == "pat" or bool(s["jira_email"])))
+    )
+    if not auth_ok:
         return (
             "Jira/Confluence is optional and is not configured in this workspace. "
             "You can keep working without it. To enable logging later, open "

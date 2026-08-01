@@ -27,8 +27,12 @@ def _cfg(s: dict) -> dict[str, str]:
     dep = str(s.get("atlassian_deployment") or "server").strip().lower()
     if dep not in ("server", "cloud"):
         dep = "server"
+    auth_type = str(s.get("jira_auth_type") or "password").strip().lower()
+    if auth_type not in ("password", "pat"):
+        auth_type = "password"
     return {
         "atlassian_deployment": dep,
+        "jira_auth_type": auth_type,
         "jira_base_url": str(s.get("jira_base_url") or "").strip(),
         "jira_email": str(s.get("jira_email") or "").strip(),
         "jira_api_token": str(s.get("jira_api_token") or "").strip(),
@@ -47,10 +51,15 @@ def _deployment(s: dict[str, str]) -> Deployment:
 def _auth_ready(s: dict[str, str]) -> bool:
     if not s["jira_api_token"]:
         return False
-    # Cloud needs email; Server needs username unless using Bearer PAT alone
     if _deployment(s) == "cloud":
         return bool(s["jira_email"])
-    return True
+    if s.get("jira_auth_type") == "pat":
+        return True
+    return bool(s["jira_email"])
+
+
+def _auth_user(s: dict[str, str]) -> str:
+    return atlassian.resolve_auth_username(s)
 
 
 @router.get("/status")
@@ -116,13 +125,13 @@ async def test_connection(body: IntegrationTestRequest):
             if not base:
                 raise HTTPException(400, "Set Jira base URL in Settings")
             return await atlassian.test_jira(
-                base, s["jira_email"], s["jira_api_token"], deployment=dep
+                base, _auth_user(s), s["jira_api_token"], deployment=dep
             )
         base = s["confluence_base_url"]
         if not base:
             raise HTTPException(400, "Set Confluence / Jira site URL in Settings")
         return await atlassian.test_confluence(
-            base, s["jira_email"], s["jira_api_token"], deployment=dep
+            base, _auth_user(s), s["jira_api_token"], deployment=dep
         )
     except HTTPException:
         raise
@@ -168,7 +177,7 @@ async def create_jira_issue(body: JiraIssueRequest):
     try:
         result = await atlassian.create_jira_issue(
             base_url=s["jira_base_url"],
-            username=s["jira_email"],
+            username=_auth_user(s),
             token=s["jira_api_token"],
             project_key=project,
             summary=body.summary,
@@ -227,7 +236,7 @@ async def create_confluence_page(body: ConfluencePageRequest):
     try:
         result = await atlassian.create_confluence_page(
             base_url=s["confluence_base_url"],
-            username=s["jira_email"],
+            username=_auth_user(s),
             token=s["jira_api_token"],
             space_key=space,
             title=body.title,

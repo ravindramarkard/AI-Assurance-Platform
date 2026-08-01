@@ -63,9 +63,10 @@ class Settings(BaseSettings):
 
     # Atlassian — server/Data Center (default) or cloud
     atlassian_deployment: Literal["server", "cloud"] = "server"
+    jira_auth_type: Literal["password", "pat"] = "password"
     jira_base_url: str = ""
-    jira_email: str = ""  # username (Server) or email (Cloud)
-    jira_api_token: str = ""  # password / PAT (Server) or API token (Cloud)
+    jira_email: str = ""  # username (Server password mode) or email (Cloud)
+    jira_api_token: str = ""  # password (Server) / PAT (Server) / API token (Cloud)
     jira_project_key: str = ""
     confluence_base_url: str = ""
     confluence_space_key: str = ""

@@ -40,6 +40,8 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     headless: bool | None = None
+    screenshot_archive: Literal["always", "on_failure", "never"] | None = None
+    screenshot_archive_user_set: bool | None = None
     browser_engine: Literal["chromium", "chrome", "custom"] | None = None
     browser_executable: str | None = None
     application_url: str | None = None
@@ -62,8 +64,9 @@ class SettingsUpdate(BaseModel):
     ui_locale: Literal["en", "ar", "hi"] | None = None
     # Atlassian — server/Data Center (default) or cloud
     atlassian_deployment: Literal["server", "cloud"] | None = None
+    jira_auth_type: Literal["password", "pat"] | None = None
     jira_base_url: str | None = None
-    jira_email: str | None = None  # username on Server; email on Cloud
+    jira_email: str | None = None  # username on Server password mode; email on Cloud
     jira_api_token: str | None = None  # password or PAT on Server; API token on Cloud
     jira_project_key: str | None = None
     confluence_base_url: str | None = None

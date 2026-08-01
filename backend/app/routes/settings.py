@@ -26,6 +26,8 @@ ALLOWED = {
     "openai_api_key",
     "anthropic_api_key",
     "headless",
+    "screenshot_archive",
+    "screenshot_archive_user_set",
     "browser_engine",
     "browser_executable",
     "application_url",
@@ -33,6 +35,7 @@ ALLOWED = {
     "ui_theme",
     "ui_locale",
     "atlassian_deployment",
+    "jira_auth_type",
     "jira_base_url",
     "jira_email",
     "jira_api_token",
@@ -74,6 +77,14 @@ async def update_settings(body: SettingsUpdate):
         if k == "headless":
             await db.set_setting(k, "true" if v else "false")
             env_settings.headless = bool(v)
+        elif k == "screenshot_archive":
+            from ..screenshot_archive import normalize_screenshot_archive
+
+            mode = normalize_screenshot_archive(v)
+            if mode:
+                await db.set_setting(k, mode)
+        elif k == "screenshot_archive_user_set":
+            await db.set_setting(k, "true" if v else "false")
         elif k == "keycloak_enabled":
             await db.set_setting(k, "true" if v else "false")
             env_settings.keycloak_enabled = bool(v)

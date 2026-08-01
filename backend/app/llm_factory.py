@@ -42,6 +42,8 @@ async def effective_settings() -> dict[str, Any]:
         "openai_api_key": settings.openai_api_key,
         "anthropic_api_key": settings.anthropic_api_key,
         "headless": settings.headless,
+        "screenshot_archive": None,
+        "screenshot_archive_user_set": False,
         "browser_engine": settings.browser_engine,
         "browser_executable": settings.browser_executable,
         "application_url": settings.application_url,
@@ -49,6 +51,7 @@ async def effective_settings() -> dict[str, Any]:
         "ui_theme": settings.ui_theme,
         "ui_locale": settings.ui_locale,
         "atlassian_deployment": settings.atlassian_deployment,
+        "jira_auth_type": settings.jira_auth_type,
         "jira_base_url": settings.jira_base_url,
         "jira_email": settings.jira_email,
         "jira_api_token": settings.jira_api_token,
@@ -65,7 +68,7 @@ async def effective_settings() -> dict[str, Any]:
         "keycloak_redirect_uri": settings.keycloak_redirect_uri,
     }
     for k, v in stored.items():
-        if k in ("headless", "keycloak_enabled"):
+        if k in ("headless", "keycloak_enabled", "screenshot_archive_user_set"):
             out[k] = v.lower() in ("1", "true", "yes")
         elif k == "llm_vision_probe_ok":
             out[k] = v.lower() in ("1", "true", "yes")
@@ -81,6 +84,13 @@ async def effective_settings() -> dict[str, Any]:
         else:
             out[k] = v
     out["llm_vision_mode"] = resolve_vision_mode(out.get("llm_vision_mode"))
+    from .screenshot_archive import resolve_screenshot_archive
+
+    out["screenshot_archive"] = resolve_screenshot_archive(
+        out.get("screenshot_archive"),
+        headless=bool(out.get("headless", True)),
+    )
+    out["screenshot_archive_user_set"] = bool(out.get("screenshot_archive_user_set"))
     raw_models = stored.get("llm_models")
     if raw_models is None:
         catalog = empty_catalog()
@@ -137,6 +147,8 @@ async def public_settings() -> dict[str, Any]:
         "openai_api_key": _mask(s.get("openai_api_key")),
         "anthropic_api_key": _mask(s.get("anthropic_api_key")),
         "headless": s["headless"],
+        "screenshot_archive": s.get("screenshot_archive") or "on_failure",
+        "screenshot_archive_user_set": bool(s.get("screenshot_archive_user_set")),
         "browser_engine": s.get("browser_engine") or "chromium",
         "browser_executable": s.get("browser_executable") or "",
         "application_url": s.get("application_url") or "",
@@ -148,6 +160,9 @@ async def public_settings() -> dict[str, Any]:
         ),
         "ui_locale": s.get("ui_locale") or "en",
         "atlassian_deployment": s.get("atlassian_deployment") or "server",
+        "jira_auth_type": (
+            "pat" if (s.get("jira_auth_type") or "").strip().lower() == "pat" else "password"
+        ),
         "jira_base_url": s.get("jira_base_url") or "",
         "jira_email": s.get("jira_email") or "",
         "jira_api_token": _mask(s.get("jira_api_token")),
@@ -175,8 +190,13 @@ async def public_settings() -> dict[str, Any]:
             and s.get("jira_api_token")
             and s.get("jira_project_key")
             and (
-                s.get("jira_email")
+                (s.get("atlassian_deployment") or "server") == "cloud"
+                and s.get("jira_email")
                 or (s.get("atlassian_deployment") or "server") == "server"
+                and (
+                    (s.get("jira_auth_type") or "password") == "pat"
+                    or s.get("jira_email")
+                )
             )
         ),
         "keycloak_configured": bool(
@@ -192,8 +212,13 @@ async def public_settings() -> dict[str, Any]:
             and s.get("jira_api_token")
             and s.get("confluence_space_key")
             and (
-                s.get("jira_email")
+                (s.get("atlassian_deployment") or "server") == "cloud"
+                and s.get("jira_email")
                 or (s.get("atlassian_deployment") or "server") == "server"
+                and (
+                    (s.get("jira_auth_type") or "password") == "pat"
+                    or s.get("jira_email")
+                )
             )
         ),
     }
@@ -201,7 +226,11 @@ async def public_settings() -> dict[str, Any]:
 
 def build_llm(cfg: dict[str, Any]):
     """Construct a browser-use compatible chat model from config."""
-    from .local_llm import build_local_chat_openai, resolve_temperature
+    from .local_llm import (
+        build_local_chat_openai,
+        resolve_temperature,
+        wrap_llm_for_resilient_structured_output,
+    )
 
     provider = cfg.get("llm_provider") or "local"
     model = cfg.get("llm_model") or "local-model"
@@ -213,7 +242,8 @@ def build_llm(cfg: dict[str, Any]):
             os.environ["BROWSER_USE_API_KEY"] = key
         from browser_use import ChatBrowserUse
 
-        return ChatBrowserUse(model=model) if model and model != "local-model" else ChatBrowserUse()
+        llm = ChatBrowserUse(model=model) if model and model != "local-model" else ChatBrowserUse()
+        return wrap_llm_for_resilient_structured_output(llm)
 
     if provider == "anthropic":
         key = cfg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
@@ -224,9 +254,10 @@ def build_llm(cfg: dict[str, Any]):
         except ImportError:
             from browser_use.llm import ChatAnthropic  # type: ignore
         try:
-            return ChatAnthropic(model=model or "claude-sonnet-4-0", temperature=temp)
+            llm = ChatAnthropic(model=model or "claude-sonnet-4-0", temperature=temp)
         except TypeError:
-            return ChatAnthropic(model=model or "claude-sonnet-4-0")
+            llm = ChatAnthropic(model=model or "claude-sonnet-4-0")
+        return wrap_llm_for_resilient_structured_output(llm)
 
     if provider == "openai":
         key = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
@@ -237,18 +268,21 @@ def build_llm(cfg: dict[str, Any]):
         except ImportError:
             from browser_use.llm import ChatOpenAI  # type: ignore
         try:
-            return ChatOpenAI(model=model or "gpt-4o", temperature=temp)
+            llm = ChatOpenAI(model=model or "gpt-4o", temperature=temp)
         except TypeError:
-            return ChatOpenAI(model=model or "gpt-4o")
+            llm = ChatOpenAI(model=model or "gpt-4o")
+        return wrap_llm_for_resilient_structured_output(llm)
 
-    # local OpenAI-compatible (LM Studio / Ollama)
-    # Qwen reasoning models often put AgentOutput JSON in reasoning_content
-    # with empty content — LocalChatOpenAI hoists it so browser-use can parse.
-    return build_local_chat_openai(
-        model=model,
-        api_key=str(cfg.get("llm_api_key") or "lm-studio"),
-        base_url=cfg.get("llm_base_url"),
-        temperature=temp,
+    # local OpenAI-compatible (LM Studio / Ollama / Vitruvian)
+    # LocalChatOpenAI hoists reasoning_content + strips fences at the HTTP client layer;
+    # the resilient wrapper covers any remaining validate_json failures for all models.
+    return wrap_llm_for_resilient_structured_output(
+        build_local_chat_openai(
+            model=model,
+            api_key=str(cfg.get("llm_api_key") or "lm-studio"),
+            base_url=cfg.get("llm_base_url"),
+            temperature=temp,
+        )
     )
 
 
