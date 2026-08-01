@@ -35,7 +35,10 @@ type FormState = {
   jira_email: string
   jira_api_token: string
   jira_project_key: string
+  confluence_auth_type: 'password' | 'pat'
   confluence_base_url: string
+  confluence_email: string
+  confluence_api_token: string
   confluence_space_key: string
   keycloak_enabled: boolean
   keycloak_base_url: string
@@ -79,7 +82,10 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
     jira_email: '',
     jira_api_token: '',
     jira_project_key: '',
+    confluence_auth_type: 'password',
     confluence_base_url: '',
+    confluence_email: '',
+    confluence_api_token: '',
     confluence_space_key: '',
     keycloak_enabled: false,
     keycloak_base_url: '',
@@ -101,6 +107,8 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
   const [confluenceSpaces, setConfluenceSpaces] = useState<{ key: string; name: string }[]>(
     [],
   )
+  const [atlassianTab, setAtlassianTab] = useState<'jira' | 'confluence'>('jira')
+  const [confluencePrefill, setConfluencePrefill] = useState(false)
 
   useEffect(() => {
     if (!settings) return
@@ -108,32 +116,52 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       settings.llm_provider === 'openai' || settings.llm_provider === 'anthropic'
         ? settings.llm_provider
         : 'local'
-    setForm((f) => ({
-      ...f,
-      llm_provider: provider,
-      llm_base_url: settings.llm_base_url || f.llm_base_url,
-      llm_model: settings.llm_model || f.llm_model,
-      llm_vision_mode:
-        settings.llm_vision_mode === 'on' || settings.llm_vision_mode === 'off'
-          ? settings.llm_vision_mode
-          : 'auto',
-      llm_temperature:
-        typeof settings.llm_temperature === 'number' ? settings.llm_temperature : 0.1,
-      atlassian_deployment:
-        settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server',
-      jira_auth_type: settings.jira_auth_type === 'pat' ? 'pat' : 'password',
-      jira_base_url: settings.jira_base_url || '',
-      jira_email: settings.jira_email || '',
-      jira_project_key: settings.jira_project_key || '',
-      confluence_base_url: settings.confluence_base_url || '',
-      confluence_space_key: settings.confluence_space_key || '',
-      keycloak_enabled: !!settings.keycloak_enabled,
-      keycloak_base_url: settings.keycloak_base_url || '',
-      keycloak_realm: settings.keycloak_realm || '',
-      keycloak_client_id: settings.keycloak_client_id || '',
-      keycloak_username: settings.keycloak_username || '',
-      keycloak_redirect_uri: settings.keycloak_redirect_uri || '',
-    }))
+    setForm((f) => {
+      const confEmpty = !settings.has_confluence_api_token
+      const jiraHas = !!settings.has_jira_api_token
+      const next = {
+        ...f,
+        llm_provider: provider,
+        llm_base_url: settings.llm_base_url || f.llm_base_url,
+        llm_model: settings.llm_model || f.llm_model,
+        llm_vision_mode:
+          settings.llm_vision_mode === 'on' || settings.llm_vision_mode === 'off'
+            ? settings.llm_vision_mode
+            : 'auto' as const,
+        llm_temperature:
+          typeof settings.llm_temperature === 'number' ? settings.llm_temperature : 0.1,
+        atlassian_deployment:
+          (settings.atlassian_deployment === 'cloud' ? 'cloud' : 'server') as 'server' | 'cloud',
+        jira_auth_type: (settings.jira_auth_type === 'pat' ? 'pat' : 'password') as
+          | 'password'
+          | 'pat',
+        jira_base_url: settings.jira_base_url || '',
+        jira_email: settings.jira_email || '',
+        jira_project_key: settings.jira_project_key || '',
+        confluence_auth_type: (settings.confluence_auth_type === 'pat' ? 'pat' : 'password') as
+          | 'password'
+          | 'pat',
+        confluence_base_url: settings.confluence_base_url || '',
+        confluence_email: settings.confluence_email || '',
+        confluence_space_key: settings.confluence_space_key || '',
+        keycloak_enabled: !!settings.keycloak_enabled,
+        keycloak_base_url: settings.keycloak_base_url || '',
+        keycloak_realm: settings.keycloak_realm || '',
+        keycloak_client_id: settings.keycloak_client_id || '',
+        keycloak_username: settings.keycloak_username || '',
+        keycloak_redirect_uri: settings.keycloak_redirect_uri || '',
+      }
+      if (confEmpty && jiraHas) {
+        next.confluence_auth_type =
+          settings.jira_auth_type === 'pat' ? 'pat' : next.confluence_auth_type
+        next.confluence_email =
+          settings.confluence_email || settings.jira_email || next.confluence_email
+        next.confluence_base_url =
+          settings.confluence_base_url || settings.jira_base_url || next.confluence_base_url
+      }
+      return next
+    })
+    setConfluencePrefill(!settings.has_confluence_api_token && !!settings.has_jira_api_token)
     const th = settings.ui_theme === 'contrast' ? 'light' : settings.ui_theme
     if (th && (THEME_OPTIONS as string[]).includes(th)) setTheme(th as ThemeMode)
     const loc = settings.ui_locale
@@ -160,7 +188,12 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
             ? ''
             : form.jira_email.trim(),
         jira_project_key: form.jira_project_key.trim(),
+        confluence_auth_type: form.confluence_auth_type,
         confluence_base_url: form.confluence_base_url.trim(),
+        confluence_email:
+          form.atlassian_deployment === 'server' && form.confluence_auth_type === 'pat'
+            ? ''
+            : form.confluence_email.trim(),
         confluence_space_key: form.confluence_space_key.trim(),
         keycloak_enabled: form.keycloak_enabled,
         keycloak_base_url: form.keycloak_base_url.trim(),
@@ -177,6 +210,8 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         body.anthropic_api_key = form.anthropic_api_key
       if (form.jira_api_token && !form.jira_api_token.includes('••'))
         body.jira_api_token = form.jira_api_token
+      if (form.confluence_api_token && !form.confluence_api_token.includes('••'))
+        body.confluence_api_token = form.confluence_api_token
       if (form.keycloak_password && !form.keycloak_password.includes('••'))
         body.keycloak_password = form.keycloak_password
       if (form.keycloak_client_secret && !form.keycloak_client_secret.includes('••'))
@@ -184,6 +219,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
       const s = await api.updateSettings(body)
       onSaved(s)
       setMsg(t('saved'))
+      setConfluencePrefill(false)
       setForm((f) => ({
         ...f,
         llm_api_key: '',
@@ -191,6 +227,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         openai_api_key: '',
         anthropic_api_key: '',
         jira_api_token: '',
+        confluence_api_token: '',
         keycloak_password: '',
         keycloak_client_secret: '',
         atlassian_deployment:
@@ -199,7 +236,9 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
         jira_base_url: s.jira_base_url || '',
         jira_email: s.jira_email || '',
         jira_project_key: s.jira_project_key || '',
+        confluence_auth_type: s.confluence_auth_type === 'pat' ? 'pat' : 'password',
         confluence_base_url: s.confluence_base_url || '',
+        confluence_email: s.confluence_email || '',
         confluence_space_key: s.confluence_space_key || '',
         keycloak_enabled: !!s.keycloak_enabled,
         keycloak_base_url: s.keycloak_base_url || '',
@@ -851,7 +890,7 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
                   )}
                   {section === 'atlassian' && (
                     <div>
-          <fieldset className="block mb-3">
+          <fieldset className="block mb-4">
             <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianDeployment')}</legend>
             <div className="flex flex-wrap gap-2">
               {(
@@ -885,217 +924,341 @@ export default function SettingsPanel({ settings, onSaved }: Props) {
                 : t('atlassianCloudHint')}
             </p>
           </fieldset>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('jiraSiteUrl')}</span>
-            <input
-              type="url"
-              value={form.jira_base_url}
-              placeholder={
-                form.atlassian_deployment === 'server'
-                  ? 'https://jira.company.com'
-                  : 'https://your-domain.atlassian.net'
-              }
-              onChange={(e) => setForm({ ...form, jira_base_url: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-            />
-          </label>
-          {form.atlassian_deployment === 'server' && (
-            <fieldset className="block mb-3">
-              <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianAuthType')}</legend>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    { value: 'password' as const, label: t('atlassianAuthPassword') },
-                    { value: 'pat' as const, label: t('atlassianAuthPat') },
-                  ]
-                ).map((opt) => {
-                  const active = form.jira_auth_type === opt.value
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setForm({ ...form, jira_auth_type: opt.value })}
-                      className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
-                        active
-                          ? 'border-bu-500 bg-bu-500/10 text-bu-400'
-                          : 'border-line bg-ink-800 text-slate-300 hover:border-slate-600'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </fieldset>
-          )}
-          {(form.atlassian_deployment === 'cloud' || form.jira_auth_type === 'password') && (
-            <label className="block mb-2">
-              <span className="text-xs text-slate-400 block mb-1">
-                {form.atlassian_deployment === 'server' ? t('atlassianUsername') : t('atlassianEmail')}
-              </span>
-              <input
-                type="text"
-                value={form.jira_email}
-                placeholder={
-                  form.atlassian_deployment === 'server' ? 'jdoe' : 'you@company.com'
-                }
-                onChange={(e) => setForm({ ...form, jira_email: e.target.value })}
-                className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
-              />
-            </label>
-          )}
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">
-              {form.atlassian_deployment === 'cloud'
-                ? t('atlassianApiToken')
-                : form.jira_auth_type === 'pat'
-                  ? t('atlassianPat')
-                  : t('atlassianPassword')}
-            </span>
-            <input
-              type="password"
-              value={form.jira_api_token}
-              placeholder={
-                settings?.has_jira_api_token
-                  ? '••••••••'
-                  : form.atlassian_deployment === 'cloud'
-                    ? 'API token'
-                    : form.jira_auth_type === 'pat'
-                      ? 'Personal access token'
-                      : 'Password'
-              }
-              onChange={(e) => setForm({ ...form, jira_api_token: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-            />
-          </label>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('jiraProjectKey')}</span>
-            <select
-              value={form.jira_project_key}
-              disabled={jiraProjects.length === 0 && !form.jira_project_key}
-              onChange={(e) => setForm({ ...form, jira_project_key: e.target.value })}
-              className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
-            >
-              <option value="">
-                {jiraProjects.length === 0 ? t('jiraProjectLoadHint') : '—'}
-              </option>
-              {form.jira_project_key &&
-                !jiraProjects.some((p) => p.key === form.jira_project_key) && (
-                  <option value={form.jira_project_key}>{form.jira_project_key}</option>
-                )}
-              {jiraProjects.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.key} — {p.name}
-                </option>
-              ))}
-            </select>
-            {jiraProjects.length === 0 && (
-              <span className="text-[11px] text-slate-500 mt-1 block">{t('jiraProjectLoadHint')}</span>
-            )}
-          </label>
-          <label className="block mb-2">
-            <span className="text-xs text-slate-400 block mb-1">{t('confluenceSiteUrl')}</span>
-            <input
-              type="url"
-              value={form.confluence_base_url}
-              placeholder="Same as Jira if empty"
-              onChange={(e) => setForm({ ...form, confluence_base_url: e.target.value })}
-              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
-            />
-          </label>
-          <label className="block mb-3">
-            <span className="text-xs text-slate-400 block mb-1">{t('confluenceSpaceKey')}</span>
-            <select
-              value={form.confluence_space_key}
-              disabled={confluenceSpaces.length === 0 && !form.confluence_space_key}
-              onChange={(e) => setForm({ ...form, confluence_space_key: e.target.value })}
-              className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
-            >
-              <option value="">
-                {confluenceSpaces.length === 0 ? t('confluenceSpaceLoadHint') : '—'}
-              </option>
-              {form.confluence_space_key &&
-                !confluenceSpaces.some((p) => p.key === form.confluence_space_key) && (
-                  <option value={form.confluence_space_key}>{form.confluence_space_key}</option>
-                )}
-              {confluenceSpaces.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.key} — {p.name}
-                </option>
-              ))}
-            </select>
-            {confluenceSpaces.length === 0 && (
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                {t('confluenceSpaceLoadHint')}
-              </span>
-            )}
-          </label>
-          <div className="flex flex-wrap gap-2 items-center">
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50"
-              onClick={() => {
-                setTestMsg('')
-                void api
-                  .testIntegration('jira')
-                  .then((r) => {
-                    const projects = r.projects || []
-                    setJiraProjects(projects)
-                    setForm((f) => {
-                      const keep = f.jira_project_key
-                      const next =
-                        keep && projects.some((p) => p.key === keep)
-                          ? keep
-                          : keep || projects[0]?.key || ''
-                      return { ...f, jira_project_key: next }
-                    })
-                    setTestMsg(
-                      `Jira OK${r.display_name ? ` — ${r.display_name}` : ''}${
-                        projects.length ? ` · ${projects.length} projects` : ''
-                      }`,
-                    )
-                  })
-                  .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
-              }}
-            >
-              {t('testJira')}
-            </button>
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50"
-              onClick={() => {
-                setTestMsg('')
-                void api
-                  .testIntegration('confluence')
-                  .then((r) => {
-                    const spaces = r.spaces || []
-                    setConfluenceSpaces(spaces)
-                    setForm((f) => {
-                      const keep = f.confluence_space_key
-                      const next =
-                        keep && spaces.some((p) => p.key === keep)
-                          ? keep
-                          : keep || spaces[0]?.key || ''
-                      return { ...f, confluence_space_key: next }
-                    })
-                    setTestMsg(
-                      `Confluence OK${r.display_name ? ` — ${r.display_name}` : ''}${
-                        spaces.length ? ` · ${spaces.length} spaces` : ''
-                      }`,
-                    )
-                  })
-                  .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
-              }}
-            >
-              {t('testConfluence')}
-            </button>
-            {testMsg && (
-              <span className={`text-[11px] break-all ${statusClass(testMsg)}`}>{testMsg}</span>
-            )}
+
+          <div className="flex gap-1 mb-4 border-b border-line">
+            {(
+              [
+                { id: 'jira' as const, label: t('atlassianTabJira') },
+                { id: 'confluence' as const, label: t('atlassianTabConfluence') },
+              ]
+            ).map((tab) => {
+              const active = atlassianTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setAtlassianTab(tab.id)}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    active
+                      ? 'border-bu-500 text-bu-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">{t('chatLogHint')}</p>
+
+          {atlassianTab === 'jira' && (
+            <div>
+              <label className="block mb-2">
+                <span className="text-xs text-slate-400 block mb-1">{t('jiraSiteUrl')}</span>
+                <input
+                  type="url"
+                  value={form.jira_base_url}
+                  placeholder={
+                    form.atlassian_deployment === 'server'
+                      ? 'https://jira.company.com'
+                      : 'https://your-domain.atlassian.net'
+                  }
+                  onChange={(e) => setForm({ ...form, jira_base_url: e.target.value })}
+                  className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
+                />
+              </label>
+              {form.atlassian_deployment === 'server' && (
+                <fieldset className="block mb-3">
+                  <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianAuthType')}</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { value: 'password' as const, label: t('atlassianAuthPassword') },
+                        { value: 'pat' as const, label: t('atlassianAuthPat') },
+                      ]
+                    ).map((opt) => {
+                      const active = form.jira_auth_type === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setForm({ ...form, jira_auth_type: opt.value })}
+                          className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
+                            active
+                              ? 'border-bu-500 bg-bu-500/10 text-bu-400'
+                              : 'border-line bg-ink-800 text-slate-300 hover:border-slate-600'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+              )}
+              {(form.atlassian_deployment === 'cloud' || form.jira_auth_type === 'password') && (
+                <label className="block mb-2">
+                  <span className="text-xs text-slate-400 block mb-1">
+                    {form.atlassian_deployment === 'server'
+                      ? t('atlassianUsername')
+                      : t('atlassianEmail')}
+                  </span>
+                  <input
+                    type="text"
+                    value={form.jira_email}
+                    placeholder={
+                      form.atlassian_deployment === 'server' ? 'jdoe' : 'you@company.com'
+                    }
+                    onChange={(e) => setForm({ ...form, jira_email: e.target.value })}
+                    className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+                  />
+                </label>
+              )}
+              <label className="block mb-2">
+                <span className="text-xs text-slate-400 block mb-1">
+                  {form.atlassian_deployment === 'cloud'
+                    ? t('atlassianApiToken')
+                    : form.jira_auth_type === 'pat'
+                      ? t('atlassianPat')
+                      : t('atlassianPassword')}
+                </span>
+                <input
+                  type="password"
+                  value={form.jira_api_token}
+                  placeholder={
+                    settings?.has_jira_api_token
+                      ? '••••••••'
+                      : form.atlassian_deployment === 'cloud'
+                        ? 'API token'
+                        : form.jira_auth_type === 'pat'
+                          ? 'Personal access token'
+                          : 'Password'
+                  }
+                  onChange={(e) => setForm({ ...form, jira_api_token: e.target.value })}
+                  className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
+                />
+              </label>
+              <label className="block mb-3">
+                <span className="text-xs text-slate-400 block mb-1">{t('jiraProjectKey')}</span>
+                <select
+                  value={form.jira_project_key}
+                  disabled={jiraProjects.length === 0 && !form.jira_project_key}
+                  onChange={(e) => setForm({ ...form, jira_project_key: e.target.value })}
+                  className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+                >
+                  <option value="">
+                    {jiraProjects.length === 0 ? t('jiraProjectLoadHint') : '—'}
+                  </option>
+                  {form.jira_project_key &&
+                    !jiraProjects.some((p) => p.key === form.jira_project_key) && (
+                      <option value={form.jira_project_key}>{form.jira_project_key}</option>
+                    )}
+                  {jiraProjects.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.key} — {p.name}
+                    </option>
+                  ))}
+                </select>
+                {jiraProjects.length === 0 && (
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    {t('jiraProjectLoadHint')}
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-2 items-center">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50"
+                  onClick={() => {
+                    setTestMsg('')
+                    void api
+                      .testIntegration('jira')
+                      .then((r) => {
+                        const projects = r.projects || []
+                        setJiraProjects(projects)
+                        setForm((f) => {
+                          const keep = f.jira_project_key
+                          const next =
+                            keep && projects.some((p) => p.key === keep)
+                              ? keep
+                              : keep || projects[0]?.key || ''
+                          return { ...f, jira_project_key: next }
+                        })
+                        setTestMsg(
+                          `Jira OK${r.display_name ? ` — ${r.display_name}` : ''}${
+                            projects.length ? ` · ${projects.length} projects` : ''
+                          }`,
+                        )
+                      })
+                      .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
+                  }}
+                >
+                  {t('testJira')}
+                </button>
+                {testMsg && atlassianTab === 'jira' && (
+                  <span className={`text-[11px] break-all ${statusClass(testMsg)}`}>{testMsg}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {atlassianTab === 'confluence' && (
+            <div>
+              {confluencePrefill && (
+                <p className="text-[11px] text-amber-400/90 mb-3">{t('confluencePrefillHint')}</p>
+              )}
+              <label className="block mb-2">
+                <span className="text-xs text-slate-400 block mb-1">{t('confluenceSiteUrl')}</span>
+                <input
+                  type="url"
+                  value={form.confluence_base_url}
+                  placeholder="Same as Jira if empty"
+                  onChange={(e) => setForm({ ...form, confluence_base_url: e.target.value })}
+                  className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
+                />
+              </label>
+              {form.atlassian_deployment === 'server' && (
+                <fieldset className="block mb-3">
+                  <legend className="text-xs text-slate-400 block mb-1.5">{t('atlassianAuthType')}</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        { value: 'password' as const, label: t('atlassianAuthPassword') },
+                        { value: 'pat' as const, label: t('atlassianAuthPat') },
+                      ]
+                    ).map((opt) => {
+                      const active = form.confluence_auth_type === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setForm({ ...form, confluence_auth_type: opt.value })}
+                          className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
+                            active
+                              ? 'border-bu-500 bg-bu-500/10 text-bu-400'
+                              : 'border-line bg-ink-800 text-slate-300 hover:border-slate-600'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+              )}
+              {(form.atlassian_deployment === 'cloud' ||
+                form.confluence_auth_type === 'password') && (
+                <label className="block mb-2">
+                  <span className="text-xs text-slate-400 block mb-1">
+                    {form.atlassian_deployment === 'server'
+                      ? t('atlassianUsername')
+                      : t('atlassianEmail')}
+                  </span>
+                  <input
+                    type="text"
+                    value={form.confluence_email}
+                    placeholder={
+                      form.atlassian_deployment === 'server' ? 'jdoe' : 'you@company.com'
+                    }
+                    onChange={(e) => setForm({ ...form, confluence_email: e.target.value })}
+                    className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+                  />
+                </label>
+              )}
+              <label className="block mb-2">
+                <span className="text-xs text-slate-400 block mb-1">
+                  {form.atlassian_deployment === 'cloud'
+                    ? t('atlassianApiToken')
+                    : form.confluence_auth_type === 'pat'
+                      ? t('atlassianPat')
+                      : t('atlassianPassword')}
+                </span>
+                <input
+                  type="password"
+                  value={form.confluence_api_token}
+                  placeholder={
+                    settings?.has_confluence_api_token
+                      ? '••••••••'
+                      : form.atlassian_deployment === 'cloud'
+                        ? 'API token'
+                        : form.confluence_auth_type === 'pat'
+                          ? 'Personal access token'
+                          : 'Password'
+                  }
+                  onChange={(e) => setForm({ ...form, confluence_api_token: e.target.value })}
+                  className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 font-mono text-xs"
+                />
+              </label>
+              <label className="block mb-3">
+                <span className="text-xs text-slate-400 block mb-1">{t('confluenceSpaceKey')}</span>
+                <select
+                  value={form.confluence_space_key}
+                  disabled={confluenceSpaces.length === 0 && !form.confluence_space_key}
+                  onChange={(e) => setForm({ ...form, confluence_space_key: e.target.value })}
+                  className="w-full max-w-md bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 disabled:opacity-50"
+                >
+                  <option value="">
+                    {confluenceSpaces.length === 0 ? t('confluenceSpaceLoadHint') : '—'}
+                  </option>
+                  {form.confluence_space_key &&
+                    !confluenceSpaces.some((p) => p.key === form.confluence_space_key) && (
+                      <option value={form.confluence_space_key}>
+                        {form.confluence_space_key}
+                      </option>
+                    )}
+                  {confluenceSpaces.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.key} — {p.name}
+                    </option>
+                  ))}
+                </select>
+                {confluenceSpaces.length === 0 && (
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    {t('confluenceSpaceLoadHint')}
+                  </span>
+                )}
+              </label>
+              <div className="flex flex-wrap gap-2 items-center">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-md border border-line text-xs text-slate-300 hover:border-bu-500/50"
+                  onClick={() => {
+                    setTestMsg('')
+                    void api
+                      .testIntegration('confluence')
+                      .then((r) => {
+                        const spaces = r.spaces || []
+                        setConfluenceSpaces(spaces)
+                        setForm((f) => {
+                          const keep = f.confluence_space_key
+                          const next =
+                            keep && spaces.some((p) => p.key === keep)
+                              ? keep
+                              : keep || spaces[0]?.key || ''
+                          return { ...f, confluence_space_key: next }
+                        })
+                        setTestMsg(
+                          `Confluence OK${r.display_name ? ` — ${r.display_name}` : ''}${
+                            spaces.length ? ` · ${spaces.length} spaces` : ''
+                          }`,
+                        )
+                      })
+                      .catch((e) => setTestMsg(e instanceof Error ? e.message : String(e)))
+                  }}
+                >
+                  {t('testConfluence')}
+                </button>
+                {testMsg && atlassianTab === 'confluence' && (
+                  <span className={`text-[11px] break-all ${statusClass(testMsg)}`}>{testMsg}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <p className="mt-3 text-[11px] text-slate-500">{t('chatLogHint')}</p>
                     </div>
                   )}
                 </div>

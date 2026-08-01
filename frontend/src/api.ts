@@ -78,7 +78,10 @@ export type AppSettings = {
   jira_email?: string
   jira_api_token?: string | null
   jira_project_key?: string
+  confluence_auth_type?: 'password' | 'pat' | string
   confluence_base_url?: string
+  confluence_email?: string
+  confluence_api_token?: string | null
   confluence_space_key?: string
   keycloak_enabled?: boolean
   keycloak_base_url?: string
@@ -89,6 +92,7 @@ export type AppSettings = {
   keycloak_password?: string | null
   keycloak_redirect_uri?: string
   has_jira_api_token?: boolean
+  has_confluence_api_token?: boolean
   has_keycloak_password?: boolean
   has_keycloak_client_secret?: boolean
   jira_configured?: boolean
