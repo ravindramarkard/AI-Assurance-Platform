@@ -94,6 +94,26 @@ async def effective_settings() -> dict[str, Any]:
         headless=bool(out.get("headless", True)),
     )
     out["screenshot_archive_user_set"] = bool(out.get("screenshot_archive_user_set"))
+
+    # One-time: seed Confluence creds from Jira when Confluence token was never set
+    # (upgrade path after splitting shared Atlassian credentials).
+    if not (stored.get("confluence_api_token") or "").strip() and (out.get("jira_api_token") or "").strip():
+        jira_tok = str(out["jira_api_token"])
+        await db.set_setting("confluence_api_token", jira_tok)
+        out["confluence_api_token"] = jira_tok
+        if "confluence_auth_type" not in stored:
+            jira_auth = (
+                "pat"
+                if str(out.get("jira_auth_type") or "").strip().lower() == "pat"
+                else "password"
+            )
+            await db.set_setting("confluence_auth_type", jira_auth)
+            out["confluence_auth_type"] = jira_auth
+        if not (stored.get("confluence_email") or "").strip() and (out.get("jira_email") or "").strip():
+            jira_email = str(out["jira_email"])
+            await db.set_setting("confluence_email", jira_email)
+            out["confluence_email"] = jira_email
+
     raw_models = stored.get("llm_models")
     if raw_models is None:
         catalog = empty_catalog()

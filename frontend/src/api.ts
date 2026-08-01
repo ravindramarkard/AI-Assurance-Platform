@@ -392,7 +392,14 @@ export type ApiOverview = {
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(text || res.statusText)
+    let message = text || res.statusText
+    try {
+      const parsed = JSON.parse(text) as { detail?: unknown }
+      if (typeof parsed.detail === 'string') message = parsed.detail
+    } catch {
+      /* keep raw */
+    }
+    throw new Error(message)
   }
   return res.json()
 }
