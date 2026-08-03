@@ -412,6 +412,10 @@ export const en = {
   openSettingsToConfigure: 'Open Settings to configure the model',
   applicationUrl: 'Application URL',
   defaultStartUrl: 'Default start URL',
+  applicationUsername: 'Username',
+  applicationPassword: 'Password',
+  applicationLoginHelp:
+    'Used when the agent needs to sign into the Application URL (or Runtime URL). Prefer these on normal login forms; Keycloak SSO credentials stay in Settings.',
   concurrency: 'Concurrency',
   maxAgents: 'Max concurrent agents (1–8)',
   browser: 'Browser',

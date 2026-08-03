@@ -411,6 +411,10 @@ export const ar: Record<MessageKey, string> = {
   openSettingsToConfigure: 'افتح الإعدادات لتهيئة النموذج',
   applicationUrl: 'رابط التطبيق',
   defaultStartUrl: 'رابط البدء الافتراضي',
+  applicationUsername: 'اسم المستخدم',
+  applicationPassword: 'كلمة المرور',
+  applicationLoginHelp:
+    'تُستخدم عندما يحتاج الوكيل لتسجيل الدخول إلى رابط التطبيق (أو رابط التشغيل). يُفضّل استخدامها في نماذج تسجيل الدخول العادية؛ تظل بيانات Keycloak SSO في الإعدادات.',
   concurrency: 'التزامن',
   maxAgents: 'الحد الأقصى للوكلاء المتزامنين (1–8)',
   browser: 'المتصفح',

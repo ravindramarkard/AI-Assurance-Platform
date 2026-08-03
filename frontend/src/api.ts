@@ -68,6 +68,9 @@ export type AppSettings = {
   browser_executable?: string
   /** Default start URL when a task omits a link (overridable per run). */
   application_url?: string
+  application_username?: string
+  application_password?: string | null
+  has_application_password?: boolean
   /** How many agent sessions can run at the same time (1–8). */
   max_concurrent_agents?: number
   ui_theme?: 'dark' | 'light' | 'system' | string

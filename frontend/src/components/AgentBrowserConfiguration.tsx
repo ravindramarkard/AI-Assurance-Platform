@@ -16,6 +16,8 @@ type FormState = {
   browser_engine: BrowserEngine
   browser_executable: string
   application_url: string
+  application_username: string
+  application_password: string
   max_concurrent_agents: number
 }
 
@@ -40,6 +42,8 @@ export default function AgentBrowserConfiguration({
     browser_engine: 'chromium',
     browser_executable: '',
     application_url: '',
+    application_username: '',
+    application_password: '',
     max_concurrent_agents: 2,
   })
   const [saving, setSaving] = useState(false)
@@ -56,6 +60,8 @@ export default function AgentBrowserConfiguration({
       browser_engine: ['chromium', 'chrome', 'custom'].includes(engine) ? engine : 'chromium',
       browser_executable: settings.browser_executable || '',
       application_url: settings.application_url || '',
+      application_username: settings.application_username || '',
+      application_password: '',
       max_concurrent_agents: Math.max(1, Math.min(8, Number(settings.max_concurrent_agents) || 2)),
     })
   }, [settings])
@@ -64,15 +70,20 @@ export default function AgentBrowserConfiguration({
     setSaving(true)
     setMsg('')
     try {
-      const s = await api.updateSettings({
+      const body: Record<string, unknown> = {
         application_url: form.application_url.trim(),
+        application_username: form.application_username.trim(),
         max_concurrent_agents: Math.max(1, Math.min(8, Number(form.max_concurrent_agents) || 2)),
         browser_engine: form.browser_engine,
         browser_executable: form.browser_executable.trim(),
         headless: form.headless,
         screenshot_archive: form.screenshot_archive,
         screenshot_archive_user_set: form.screenshot_archive_user_set,
-      })
+      }
+      if (form.application_password && !form.application_password.includes('••')) {
+        body.application_password = form.application_password
+      }
+      const s = await api.updateSettings(body as Parameters<typeof api.updateSettings>[0])
       onSaved(s)
       setMsg(t('saved'))
       const headless = s.headless
@@ -83,6 +94,8 @@ export default function AgentBrowserConfiguration({
         browser_engine: (s.browser_engine as BrowserEngine) || form.browser_engine,
         browser_executable: s.browser_executable || '',
         application_url: s.application_url || '',
+        application_username: s.application_username || '',
+        application_password: '',
         max_concurrent_agents: Math.max(1, Math.min(8, Number(s.max_concurrent_agents) || 2)),
       })
     } catch (e) {
@@ -141,6 +154,28 @@ export default function AgentBrowserConfiguration({
             site open that site directly — Application URL is skipped. Override for a single run with{' '}
             <span className="text-slate-400">Runtime URL</span> on the home screen.
           </p>
+          <label className="block mb-2 mt-3">
+            <span className="text-xs text-slate-400 block mb-1">{t('applicationUsername')}</span>
+            <input
+              type="text"
+              autoComplete="username"
+              value={form.application_username}
+              onChange={(e) => setForm({ ...form, application_username: e.target.value })}
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+            />
+          </label>
+          <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('applicationPassword')}</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={form.application_password}
+              placeholder={settings?.has_application_password ? '••••••••' : ''}
+              onChange={(e) => setForm({ ...form, application_password: e.target.value })}
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+            />
+          </label>
+          <p className="text-[11px] text-slate-500 mb-1">{t('applicationLoginHelp')}</p>
         </div>
 
         <div className="mb-6 border-t border-line pt-5">

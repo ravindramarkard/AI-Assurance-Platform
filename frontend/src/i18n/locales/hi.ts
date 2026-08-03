@@ -411,6 +411,10 @@ export const hi: Record<MessageKey, string> = {
   openSettingsToConfigure: 'मॉडल कॉन्फ़िगर करने के लिए सेटिंग्स खोलें',
   applicationUrl: 'एप्लिकेशन URL',
   defaultStartUrl: 'डिफ़ॉल्ट स्टार्ट URL',
+  applicationUsername: 'उपयोगकर्ता नाम',
+  applicationPassword: 'पासवर्ड',
+  applicationLoginHelp:
+    'जब एजेंट को Application URL (या Runtime URL) में साइन इन करना हो तब उपयोग होता है। सामान्य लॉगिन फ़ॉर्म पर इन्हें प्राथमिकता दें; Keycloak SSO क्रेडेंशियल Settings में रहेंगे।',
   concurrency: 'समवर्तीता',
   maxAgents: 'अधिकतम समवर्ती एजेंट (1–8)',
   browser: 'ब्राउज़र',
