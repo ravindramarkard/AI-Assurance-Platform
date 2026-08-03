@@ -25,9 +25,11 @@ Priority — follow this order and stop at the first match:
 
 Stay on the start URL / task destination unless the user clearly asks to go elsewhere.
 
-## Keycloak / SSO
+## Login credentials
 
-If Keycloak credentials are configured (see system instructions), use the `<secret>…</secret>` placeholders on the login form. Never type real passwords into the thought text.
+If Application login credentials are configured (see system instructions), use `<secret>x_app_user</secret>` / `<secret>x_app_pass</secret>` on normal app login forms. Prefer these first.
+If Keycloak credentials are configured, use `<secret>x_keycloak_user</secret>` / `<secret>x_keycloak_pass</secret>` only on Keycloak / SSO-looking pages.
+Never type real passwords into the thought text.
 
 ## The 7 rules
 

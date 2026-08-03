@@ -458,13 +458,24 @@ async def run_session(session_id: str, task: str) -> None:
 
     extend_system = f"{extend_system}\n\n{HITL_SYSTEM_MESSAGE}"
 
-    # Keycloak SSO — append login instructions when configured
+    # Application login + Keycloak SSO — append instructions / secrets when configured
+    from . import app_login as app_login_mod
     from . import keycloak as keycloak_mod
 
+    app_msg = app_login_mod.login_system_message(cfg)
+    if app_msg:
+        extend_system = f"{extend_system}\n\n{app_msg}"
     kc_msg = keycloak_mod.login_system_message(cfg)
     if kc_msg:
         extend_system = f"{extend_system}\n\n{kc_msg}"
+
+    login_secrets: dict[str, str] = {}
+    app_secrets = app_login_mod.sensitive_data_for_agent(cfg)
+    if app_secrets:
+        login_secrets.update(app_secrets)
     kc_secrets = keycloak_mod.sensitive_data_for_agent(cfg)
+    if kc_secrets:
+        login_secrets.update(kc_secrets)
 
     app_url = str(cfg.get("application_url") or "") or None
     runtime_url = opts.get("runtime_url")
@@ -732,8 +743,8 @@ async def run_session(session_id: str, task: str) -> None:
                 {"navigate": {"url": task_dest, "new_tab": False}}
             ]
         agent_kwargs["extend_system_message"] = extend_system
-        if kc_secrets:
-            agent_kwargs["sensitive_data"] = kc_secrets
+        if login_secrets:
+            agent_kwargs["sensitive_data"] = login_secrets
 
         from browser_use.agent.views import ActionResult
         from browser_use.tools.service import Tools
