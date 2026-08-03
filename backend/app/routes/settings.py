@@ -31,6 +31,8 @@ ALLOWED = {
     "browser_engine",
     "browser_executable",
     "application_url",
+    "application_username",
+    "application_password",
     "max_concurrent_agents",
     "ui_theme",
     "ui_locale",

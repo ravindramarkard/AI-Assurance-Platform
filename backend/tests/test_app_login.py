@@ -53,5 +53,12 @@ class TestAppLogin(unittest.TestCase):
         self.assertEqual(merged["x_keycloak_user"], "kcu")
 
 
+class TestAppLoginPublicShape(unittest.TestCase):
+    def test_mask_helper_hides_password(self):
+        from app.llm_factory import _mask
+
+        self.assertTrue("••" in (_mask("s3cret") or "") or _mask("s3cret") == "••••")
+
+
 if __name__ == "__main__":
     unittest.main()

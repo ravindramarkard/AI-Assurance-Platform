@@ -47,6 +47,8 @@ async def effective_settings() -> dict[str, Any]:
         "browser_engine": settings.browser_engine,
         "browser_executable": settings.browser_executable,
         "application_url": settings.application_url,
+        "application_username": settings.application_username,
+        "application_password": settings.application_password,
         "max_concurrent_agents": settings.max_concurrent_agents,
         "ui_theme": settings.ui_theme,
         "ui_locale": settings.ui_locale,
@@ -175,6 +177,8 @@ async def public_settings() -> dict[str, Any]:
         "browser_engine": s.get("browser_engine") or "chromium",
         "browser_executable": s.get("browser_executable") or "",
         "application_url": s.get("application_url") or "",
+        "application_username": s.get("application_username") or "",
+        "application_password": _mask(s.get("application_password")),
         "max_concurrent_agents": int(s.get("max_concurrent_agents") or 2),
         "ui_theme": (
             "light"
@@ -215,6 +219,7 @@ async def public_settings() -> dict[str, Any]:
         "has_jira_api_token": bool(s.get("jira_api_token")),
         "has_confluence_api_token": bool(s.get("confluence_api_token")),
         "has_keycloak_password": bool(s.get("keycloak_password")),
+        "has_application_password": bool(s.get("application_password")),
         "has_keycloak_client_secret": bool(s.get("keycloak_client_secret")),
         "jira_configured": bool(
             s.get("jira_base_url")

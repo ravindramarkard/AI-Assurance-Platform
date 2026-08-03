@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     browser_executable: str = ""
     # Default start URL for tasks that omit a link (overridable per run via runtime_url)
     application_url: str = ""
+    application_username: str = ""
+    application_password: str = ""
     ui_theme: Literal[
         "dark",
         "light",

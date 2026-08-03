@@ -45,6 +45,8 @@ class SettingsUpdate(BaseModel):
     browser_engine: Literal["chromium", "chrome", "custom"] | None = None
     browser_executable: str | None = None
     application_url: str | None = None
+    application_username: str | None = None
+    application_password: str | None = None
     max_concurrent_agents: int | None = Field(default=None, ge=1, le=8)
     ui_theme: (
         Literal[
