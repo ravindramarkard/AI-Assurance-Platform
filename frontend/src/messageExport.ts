@@ -576,6 +576,26 @@ export function downloadTextFile(filename: string, text: string, mime: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
+export type ReportPreviewPayload = {
+  html: string
+  title: string
+  content: string
+  meta: ReportMeta
+}
+
+export function buildReportPreviewPayload(
+  content: string,
+  meta: ReportMeta,
+): ReportPreviewPayload {
+  const title = (meta.title || 'AgentBrowser report').trim() || 'AgentBrowser report'
+  return {
+    html: buildHtmlDocument(content, { ...meta, title }),
+    title,
+    content,
+    meta: { ...meta, title },
+  }
+}
+
 export function downloadHtml(content: string, titleOrMeta: string | ReportMeta) {
   const title =
     typeof titleOrMeta === 'string' ? titleOrMeta : titleOrMeta.title || 'AgentBrowser report'
