@@ -50,6 +50,8 @@ async def effective_settings() -> dict[str, Any]:
         "application_username": settings.application_username,
         "application_password": settings.application_password,
         "max_concurrent_agents": settings.max_concurrent_agents,
+        "parallel_execution_mode": settings.parallel_execution_mode,
+        "max_subagents_per_task": settings.max_subagents_per_task,
         "ui_theme": settings.ui_theme,
         "ui_locale": settings.ui_locale,
         "atlassian_deployment": settings.atlassian_deployment,
@@ -82,6 +84,14 @@ async def effective_settings() -> dict[str, Any]:
         elif k == "llm_vision_mode":
             out[k] = resolve_vision_mode(v)
         elif k == "max_concurrent_agents":
+            try:
+                out[k] = max(1, min(int(v), 8))
+            except (TypeError, ValueError):
+                pass
+        elif k == "parallel_execution_mode":
+            mode = str(v).strip().lower()
+            out[k] = mode if mode in ("off", "auto", "always") else "auto"
+        elif k == "max_subagents_per_task":
             try:
                 out[k] = max(1, min(int(v), 8))
             except (TypeError, ValueError):
@@ -180,6 +190,8 @@ async def public_settings() -> dict[str, Any]:
         "application_username": s.get("application_username") or "",
         "application_password": _mask(s.get("application_password")),
         "max_concurrent_agents": int(s.get("max_concurrent_agents") or 2),
+        "parallel_execution_mode": s.get("parallel_execution_mode") or "auto",
+        "max_subagents_per_task": int(s.get("max_subagents_per_task") or 4),
         "ui_theme": (
             "light"
             if (s.get("ui_theme") or "") == "contrast"

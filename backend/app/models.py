@@ -48,6 +48,8 @@ class SettingsUpdate(BaseModel):
     application_username: str | None = None
     application_password: str | None = None
     max_concurrent_agents: int | None = Field(default=None, ge=1, le=8)
+    parallel_execution_mode: Literal["off", "auto", "always"] | None = None
+    max_subagents_per_task: int | None = Field(default=None, ge=1, le=8)
     ui_theme: (
         Literal[
             "dark",

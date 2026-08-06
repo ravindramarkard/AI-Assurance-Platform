@@ -34,6 +34,8 @@ ALLOWED = {
     "application_username",
     "application_password",
     "max_concurrent_agents",
+    "parallel_execution_mode",
+    "max_subagents_per_task",
     "ui_theme",
     "ui_locale",
     "atlassian_deployment",
@@ -110,6 +112,17 @@ async def update_settings(body: SettingsUpdate):
             from ..queue import scale_workers
 
             await scale_workers(n)
+        elif k == "parallel_execution_mode":
+            mode = str(v).strip().lower()
+            if mode not in ("off", "auto", "always"):
+                mode = "auto"
+            await db.set_setting(k, mode)
+            if hasattr(env_settings, "parallel_execution_mode"):
+                env_settings.parallel_execution_mode = mode  # type: ignore[assignment]
+        elif k == "max_subagents_per_task":
+            n = max(1, min(int(v), 8))
+            await db.set_setting(k, str(n))
+            env_settings.max_subagents_per_task = n
         elif k == "llm_models":
             from ..llm_models_catalog import normalize_catalog
             import json

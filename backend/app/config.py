@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8742
     max_concurrent_agents: int = 2
+    parallel_execution_mode: Literal["off", "auto", "always"] = "auto"
+    max_subagents_per_task: int = 4
     data_dir: Path = ROOT / "data"
     headless: bool = True
     # chromium = Playwright Chrome-for-Testing / headless-shell
