@@ -8,7 +8,9 @@ import {
   eventsToReportSteps,
   extractMentionedFiles,
   printAsPdf,
+  buildReportPreviewPayload,
   type ReportMeta,
+  type ReportPreviewPayload,
 } from '../messageExport'
 
 type Props = {
@@ -20,6 +22,7 @@ type Props = {
   /** Session events — used to include step screenshots in HTML/PDF */
   events?: Event[]
   onOpenFile?: (path: string) => void
+  onPreviewReport?: (payload: ReportPreviewPayload) => void
 }
 
 let cachedUsername: string | null = null
@@ -42,6 +45,7 @@ export default function MessageActions({
   sessionId,
   events = [],
   onOpenFile,
+  onPreviewReport,
 }: Props) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -83,6 +87,30 @@ export default function MessageActions({
     }
   }
 
+  const openReportPreview = async () => {
+    const meta = await buildMetaWithSteps()
+    const payload = buildReportPreviewPayload(content, meta)
+    if (onPreviewReport) {
+      onPreviewReport(payload)
+      return
+    }
+    downloadHtml(content, meta)
+  }
+
+  const openReportPreviewOrPrint = async () => {
+    const meta = await buildMetaWithSteps()
+    const payload = buildReportPreviewPayload(content, meta)
+    if (onPreviewReport) {
+      onPreviewReport(payload)
+      return
+    }
+    if (!printAsPdf(content, meta)) {
+      window.alert(
+        'Could not open the print dialog. An HTML file was downloaded instead — open it and use Print → Save as PDF.',
+      )
+    }
+  }
+
   const btn =
     'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-line bg-ink-900/80 hover:border-bu-500/50 text-[11px] font-medium text-slate-300 disabled:opacity-50'
 
@@ -111,16 +139,11 @@ export default function MessageActions({
           type="button"
           className={btn}
           disabled={!!busy}
-          onClick={() =>
-            void run('html', async () => {
-              const meta = await buildMetaWithSteps()
-              downloadHtml(content, meta)
-            })
-          }
+          onClick={() => void run('html', openReportPreview)}
           title={
             stepCount > 0
-              ? `Download HTML with ${stepCount} step screenshot(s)`
-              : 'Download as HTML file'
+              ? `Preview HTML report with ${stepCount} step screenshot(s)`
+              : 'Preview as HTML in the Report panel'
           }
         >
           <span aria-hidden>📄</span>
@@ -130,20 +153,11 @@ export default function MessageActions({
           type="button"
           className={btn}
           disabled={!!busy}
-          onClick={() =>
-            void run('pdf', async () => {
-              const meta = await buildMetaWithSteps()
-              if (!printAsPdf(content, meta)) {
-                window.alert(
-                  'Could not open the print dialog. An HTML file was downloaded instead — open it and use Print → Save as PDF.',
-                )
-              }
-            })
-          }
+          onClick={() => void run('pdf', openReportPreviewOrPrint)}
           title={
             stepCount > 0
-              ? `Print / Save as PDF with ${stepCount} step screenshot(s)`
-              : 'Open print dialog — choose Save as PDF'
+              ? `Preview report (PDF download available) with ${stepCount} step screenshot(s)`
+              : 'Preview report — download PDF from the Report panel'
           }
         >
           <span aria-hidden>⇩</span>
@@ -167,8 +181,8 @@ export default function MessageActions({
       </div>
       {stepCount > 0 && (
         <p className="text-[10px] text-slate-500">
-          HTML / PDF include {stepCount} step{stepCount === 1 ? '' : 's'} with screenshots and
-          details.
+          HTML / PDF open a Report preview ({stepCount} step{stepCount === 1 ? '' : 's'} with
+          screenshots). Download from the panel.
         </p>
       )}
 
