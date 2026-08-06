@@ -420,6 +420,17 @@ export const hi: Record<MessageKey, string> = {
     'जब एजेंट को Application URL (या Runtime URL) में साइन इन करना हो तब उपयोग होता है। सामान्य लॉगिन फ़ॉर्म पर इन्हें प्राथमिकता दें; Keycloak SSO क्रेडेंशियल Settings में रहेंगे।',
   concurrency: 'समवर्तीता',
   maxAgents: 'अधिकतम समवर्ती एजेंट (1–8)',
+  parallelExecution: 'समानांतर निष्पादन',
+  parallelExecutionOff: 'बंद',
+  parallelExecutionAuto: 'ऑटो',
+  parallelExecutionAlways: 'हमेशा',
+  parallelExecutionHelp:
+    'यह नियंत्रित करता है कि टास्क सबएजेंट्स को समानांतर चलाने दे (ऑटो = ज़रूरत होने पर ही)।',
+  maxSubagents: 'प्रति टास्क अधिकतम सबएजेंट (1–8)',
+  maxSubagentsHelp: 'एक टास्क कितने सबएजेंट्स बना सकता है, इसकी अधिकतम सीमा।',
+  forceParallel: 'समानांतर मजबूर करें',
+  forceParallelHelp:
+    'इस रन को समानांतर सबएजेंट निष्पादन के साथ शुरू करें (डिफ़ॉल्ट को ओवरराइड करता है)।',
   browser: 'ब्राउज़र',
   browserEngine: 'ब्राउज़र इंजन',
   headless: 'हेडलेस',

@@ -6,7 +6,13 @@ import VoiceInputButton from './VoiceInputButton'
 type Props = {
   settings: AppSettings | null
   llmReady?: boolean | null
-  onCreate: (task: string, model?: string, files?: File[], runtimeUrl?: string) => Promise<void>
+  onCreate: (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    forceParallel?: boolean,
+  ) => Promise<void>
   onOpenSettings: () => void
 }
 
@@ -45,6 +51,7 @@ export default function AgentPage({ settings, llmReady = true, onCreate, onOpenS
   const canSubmit = llmReady === true
   const [task, setTask] = useState('')
   const [runtimeUrl, setRuntimeUrl] = useState('')
+  const [forceParallel, setForceParallel] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [modelOpen, setModelOpen] = useState(false)
@@ -126,6 +133,7 @@ export default function AgentPage({ settings, llmReady = true, onCreate, onOpenS
         modelLabel,
         attachments.map((a) => a.file),
         runtimeUrl.trim() || undefined,
+        forceParallel,
       )
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to start agent')
@@ -290,6 +298,15 @@ export default function AgentPage({ settings, llmReady = true, onCreate, onOpenS
               {applicationUrl && !runtimeUrl.trim() && (
                 <p className="mt-1 text-[10px] text-slate-600">{t('usingAppUrl')}</p>
               )}
+              <label className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={forceParallel}
+                  onChange={(e) => setForceParallel(e.target.checked)}
+                />
+                {t('forceParallel')}
+              </label>
+              <p className="mt-1 text-[10px] text-slate-600">{t('forceParallelHelp')}</p>
             </div>
 
             {attachments.length > 0 && (

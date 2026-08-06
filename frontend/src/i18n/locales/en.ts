@@ -421,6 +421,17 @@ export const en = {
     'Used when the agent needs to sign into the Application URL (or Runtime URL). Prefer these on normal login forms; Keycloak SSO credentials stay in Settings.',
   concurrency: 'Concurrency',
   maxAgents: 'Max concurrent agents (1–8)',
+  parallelExecution: 'Parallel execution',
+  parallelExecutionOff: 'Off',
+  parallelExecutionAuto: 'Auto',
+  parallelExecutionAlways: 'Always',
+  parallelExecutionHelp:
+    'Controls whether tasks can spawn subagents in parallel (Auto = only when helpful).',
+  maxSubagents: 'Max subagents per task (1–8)',
+  maxSubagentsHelp: 'Upper bound for how many subagents a single task may spawn.',
+  forceParallel: 'Force parallel',
+  forceParallelHelp:
+    'Start this run with parallel subagent execution enabled (overrides the task default).',
   browser: 'Browser',
   browserEngine: 'Browser engine',
   headless: 'Headless',

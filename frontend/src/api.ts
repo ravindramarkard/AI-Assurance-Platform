@@ -17,6 +17,21 @@ export type Session = {
   step_count: number
   current_url?: string | null
   hitl_pending?: HitlPending | string | null
+  parent_id?: string | null
+  role?: 'root' | 'orchestrator' | 'child' | string
+  branch_id?: string | null
+  force_parallel?: boolean | number
+  aggregate_report?: string | null
+  plan?: unknown
+  plan_json?: string | null
+  child_stats?: {
+    total: number
+    done?: number
+    completed?: number
+    failed: number
+    running: number
+    queued: number
+  }
 }
 
 export type Message = {
@@ -73,6 +88,10 @@ export type AppSettings = {
   has_application_password?: boolean
   /** How many agent sessions can run at the same time (1–8). */
   max_concurrent_agents?: number
+  /** How subagents are allowed to run within a task (off/auto/always). */
+  parallel_execution_mode?: 'off' | 'auto' | 'always'
+  /** Cap on how many subagents a task may spawn (1–8). */
+  max_subagents_per_task?: number
   ui_theme?: 'dark' | 'light' | 'system' | string
   ui_locale?: 'en' | 'ar' | 'hi' | string
   atlassian_deployment?: 'server' | 'cloud' | string
@@ -420,6 +439,7 @@ export const api = {
     model?: string,
     files?: File[],
     runtimeUrl?: string,
+    forceParallel?: boolean,
     llmProvider?: string,
   ) => {
     const runtime_url = (runtimeUrl || '').trim() || undefined
@@ -429,6 +449,7 @@ export const api = {
       fd.append('task', task)
       if (model) fd.append('model', model)
       if (runtime_url) fd.append('runtime_url', runtime_url)
+      if (forceParallel !== undefined) fd.append('force_parallel', forceParallel ? 'true' : 'false')
       if (llm_provider) fd.append('llm_provider', llm_provider)
       for (const f of files) fd.append('files', f)
       return fetch('/api/sessions/with-files', {
@@ -439,10 +460,18 @@ export const api = {
     return fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, model, runtime_url, llm_provider }),
+      body: JSON.stringify({
+        task,
+        model,
+        runtime_url,
+        force_parallel: forceParallel,
+        llm_provider,
+      }),
     }).then((r) => json<Session>(r))
   },
   getSession: (id: string) => fetch(`/api/sessions/${id}`).then((r) => json<Session>(r)),
+  listSessionChildren: (id: string) =>
+    fetch(`/api/sessions/${id}/children`).then((r) => json<Session[]>(r)),
   getMessages: (id: string) => fetch(`/api/sessions/${id}/messages`).then((r) => json<Message[]>(r)),
   getEvents: (id: string) => fetch(`/api/sessions/${id}/events`).then((r) => json<Event[]>(r)),
   postMessage: (id: string, content: string) =>

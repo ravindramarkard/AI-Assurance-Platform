@@ -431,11 +431,17 @@ export default function App() {
     return true
   }, [hadBrowserActivity, events, session, messages])
 
-  const onCreate = async (task: string, model?: string, files?: File[], runtimeUrl?: string) => {
+  const onCreate = async (
+    task: string,
+    model?: string,
+    files?: File[],
+    runtimeUrl?: string,
+    forceParallel?: boolean,
+  ) => {
     if (llmReady !== true) {
       throw new Error(t('modelNotConnected'))
     }
-    const s = await api.createSession(task, model, files, runtimeUrl)
+    const s = await api.createSession(task, model, files, runtimeUrl, forceParallel)
     await refreshSessions()
     await loadSession(s.id)
     if (files && files.length > 0) {

@@ -420,6 +420,17 @@ export const ar: Record<MessageKey, string> = {
     'تُستخدم عندما يحتاج الوكيل لتسجيل الدخول إلى رابط التطبيق (أو رابط التشغيل). يُفضّل استخدامها في نماذج تسجيل الدخول العادية؛ تظل بيانات Keycloak SSO في الإعدادات.',
   concurrency: 'التزامن',
   maxAgents: 'الحد الأقصى للوكلاء المتزامنين (1–8)',
+  parallelExecution: 'التنفيذ المتوازي',
+  parallelExecutionOff: 'إيقاف',
+  parallelExecutionAuto: 'تلقائي',
+  parallelExecutionAlways: 'دائمًا',
+  parallelExecutionHelp:
+    'يحدد ما إذا كان يمكن للمهمة تشغيل وكلاء فرعيين بالتوازي (تلقائي = عند الحاجة فقط).',
+  maxSubagents: 'أقصى الوكلاء الفرعيين لكل مهمة (1–8)',
+  maxSubagentsHelp: 'حد أعلى لعدد الوكلاء الفرعيين الذين يمكن للمهمة إنشاؤهم.',
+  forceParallel: 'فرض التوازي',
+  forceParallelHelp:
+    'ابدأ هذا التشغيل مع تفعيل التوازي للوكلاء الفرعيين (يتجاوز الإعداد الافتراضي).',
   browser: 'المتصفح',
   browserEngine: 'محرك المتصفح',
   headless: 'بدون واجهة',

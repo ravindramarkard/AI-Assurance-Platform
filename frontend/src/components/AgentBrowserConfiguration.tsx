@@ -9,6 +9,8 @@ export type AgentBrowserConfigurationProps = {
 
 type ScreenshotArchive = 'always' | 'on_failure' | 'never'
 
+type ParallelExecutionMode = 'off' | 'auto' | 'always'
+
 type FormState = {
   headless: boolean
   screenshot_archive: ScreenshotArchive
@@ -19,6 +21,8 @@ type FormState = {
   application_username: string
   application_password: string
   max_concurrent_agents: number
+  parallel_execution_mode: ParallelExecutionMode
+  max_subagents_per_task: number
 }
 
 function defaultArchive(headless: boolean): ScreenshotArchive {
@@ -28,6 +32,11 @@ function defaultArchive(headless: boolean): ScreenshotArchive {
 function normalizeArchive(v: unknown, headless: boolean): ScreenshotArchive {
   if (v === 'always' || v === 'on_failure' || v === 'never') return v
   return defaultArchive(headless)
+}
+
+function normalizeParallelMode(v: unknown): ParallelExecutionMode {
+  if (v === 'off' || v === 'auto' || v === 'always') return v
+  return 'auto'
 }
 
 export default function AgentBrowserConfiguration({
@@ -45,6 +54,8 @@ export default function AgentBrowserConfiguration({
     application_username: '',
     application_password: '',
     max_concurrent_agents: 2,
+    parallel_execution_mode: 'auto',
+    max_subagents_per_task: 4,
   })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -63,6 +74,8 @@ export default function AgentBrowserConfiguration({
       application_username: settings.application_username || '',
       application_password: '',
       max_concurrent_agents: Math.max(1, Math.min(8, Number(settings.max_concurrent_agents) || 2)),
+      parallel_execution_mode: normalizeParallelMode(settings.parallel_execution_mode),
+      max_subagents_per_task: Math.max(1, Math.min(8, Number(settings.max_subagents_per_task) || 4)),
     })
   }, [settings])
 
@@ -74,6 +87,8 @@ export default function AgentBrowserConfiguration({
         application_url: form.application_url.trim(),
         application_username: form.application_username.trim(),
         max_concurrent_agents: Math.max(1, Math.min(8, Number(form.max_concurrent_agents) || 2)),
+        parallel_execution_mode: form.parallel_execution_mode,
+        max_subagents_per_task: Math.max(1, Math.min(8, Number(form.max_subagents_per_task) || 4)),
         browser_engine: form.browser_engine,
         browser_executable: form.browser_executable.trim(),
         headless: form.headless,
@@ -97,6 +112,8 @@ export default function AgentBrowserConfiguration({
         application_username: s.application_username || '',
         application_password: '',
         max_concurrent_agents: Math.max(1, Math.min(8, Number(s.max_concurrent_agents) || 2)),
+        parallel_execution_mode: normalizeParallelMode(s.parallel_execution_mode),
+        max_subagents_per_task: Math.max(1, Math.min(8, Number(s.max_subagents_per_task) || 4)),
       })
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Save failed')
@@ -181,6 +198,43 @@ export default function AgentBrowserConfiguration({
         <div className="mb-6 border-t border-line pt-5">
           <h2 className="text-sm font-medium text-slate-200 mb-3">{t('concurrency')}</h2>
           <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('parallelExecution')}</span>
+            <select
+              value={form.parallel_execution_mode}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  parallel_execution_mode: normalizeParallelMode(e.target.value),
+                })
+              }
+              className="w-full bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500 text-slate-200"
+            >
+              <option value="off">{t('parallelExecutionOff')}</option>
+              <option value="auto">{t('parallelExecutionAuto')}</option>
+              <option value="always">{t('parallelExecutionAlways')}</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-slate-500 mb-3">{t('parallelExecutionHelp')}</p>
+
+          <label className="block mb-2">
+            <span className="text-xs text-slate-400 block mb-1">{t('maxSubagents')}</span>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={form.max_subagents_per_task}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  max_subagents_per_task: Math.max(1, Math.min(8, Number(e.target.value) || 1)),
+                })
+              }
+              className="w-28 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
+            />
+          </label>
+          <p className="text-[11px] text-slate-500 mb-3">{t('maxSubagentsHelp')}</p>
+
+          <label className="block mb-2">
             <span className="text-xs text-slate-400 block mb-1">{t('maxAgents')}</span>
             <input
               type="number"
@@ -197,8 +251,9 @@ export default function AgentBrowserConfiguration({
             />
           </label>
           <p className="text-[11px] text-slate-500">
-            With 1, a new agent stays <span className="text-slate-400">queued</span> until the current
-            one finishes. Raise to 2+ to run multiple agents in parallel.
+            Caps all live browsers (root agents + orchestrators + subagents). With 1, a new agent stays{' '}
+            <span className="text-slate-400">queued</span> until the current one finishes. Raise to 2+ to
+            run multiple agents in parallel.
           </p>
         </div>
 
