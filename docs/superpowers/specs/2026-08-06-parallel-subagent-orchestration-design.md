@@ -62,7 +62,7 @@ User task (New Agent ± force_parallel)
    4. Children use existing queue workers (max_concurrent_agents)
    5. Each child = own Browser + Agent; inject existing sensitive_data / app login
    6. Failed child → one retry (new child session, same branch_id)
-   7. Aggregator LLM → aggregate_report on parent → status done | partial | failed
+   7. Aggregator LLM → aggregate_report on parent → status completed | partial | failed
 ```
 
 ```
@@ -147,7 +147,7 @@ Validation rules:
 ### Sessions
 
 - `POST /api/sessions` (and multipart variant): optional `force_parallel: bool`
-- `GET /api/sessions/{id}`: include `parent_id`, `role`, `branch_id`, `force_parallel`, plan summary, `aggregate_report`, `child_stats` `{ total, done, failed, running, queued }`
+- `GET /api/sessions/{id}`: include `parent_id`, `role`, `branch_id`, `force_parallel`, plan summary, `aggregate_report`, `child_stats` `{ total, completed, failed, running, queued }`
 - `GET /api/sessions/{id}/children`: children newest-first (include retries); fields: id, title, status, branch_id, attempt, error, updated_at
 - Parent **stop**: cancel queued children + stop running children; parent uses the same terminal status as today’s single-agent stop (`SessionControlRequest` stop path)
 - Child **stop**: that branch counts as failed with no retry; parent continues remaining branches
@@ -256,7 +256,7 @@ Child task envelope includes: branch title/goal, truncated parent task for conte
 - [ ] Force parallel on multi-step task → children spawned even if short
 - [ ] `parallel_execution_mode=off` without force → never plans
 - [ ] One child fails → exactly one retry → parent `partial` if still failing and others ok
-- [ ] All children succeed → parent `done` with merged report
+- [ ] All children succeed → parent `completed` with merged report
 - [ ] Stop parent cancels/stops children
 - [ ] `max_concurrent_agents=1` → at most one live browser; other children queued
 - [ ] Child HITL does not block sibling agents
