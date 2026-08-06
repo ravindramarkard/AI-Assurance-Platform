@@ -8,6 +8,7 @@ import {
   type Session,
 } from '../api'
 import { suggestFollowUps } from '../followUpPrompts'
+import type { ReportPreviewPayload } from '../messageExport'
 import { usePreferences } from '../preferences'
 import { thoughtCopyText } from '../thoughtCopyText'
 import CopyIconButton from './CopyIconButton'
@@ -28,6 +29,7 @@ type Props = {
   /** Delete current session and leave the workspace */
   onClearSession?: () => void
   onOpenFile?: (path: string) => void
+  onPreviewReport?: (payload: ReportPreviewPayload) => void
   onScheduled?: () => void
   onOpenScheduled?: () => void
 }
@@ -354,6 +356,7 @@ export default function ChatPanel({
   onControl,
   onClearSession,
   onOpenFile,
+  onPreviewReport,
   onScheduled,
   onOpenScheduled,
 }: Props) {
@@ -770,6 +773,7 @@ export default function ChatPanel({
                   sessionId={session?.id}
                   events={events}
                   onOpenFile={onOpenFile}
+                  onPreviewReport={onPreviewReport}
                 />
               </div>
             )

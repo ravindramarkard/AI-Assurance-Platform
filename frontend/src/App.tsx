@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AppSettings, type Event, type Message, type Session } from './api'
 import { looksLikeGeneralChat } from './chatGate'
+import type { ReportPreviewPayload } from './messageExport'
 import {
   THEME_OPTIONS,
   THEME_SWATCHES,
@@ -39,6 +40,7 @@ function clampSidebarWidth(w: number): number {
 
 type View = 'agentbrowser' | 'a2a' | 'redteam' | 'apitest' | 'settings'
 type AgentsPane = 'create' | 'list'
+type RightTab = 'browser' | 'files' | 'logs' | 'report'
 
 export default function App() {
   const { t, theme, setTheme, locale, setLocale, resolvedTheme, consoles } = usePreferences()
@@ -56,7 +58,9 @@ export default function App() {
   /** null = probing, true = reachable, false = not configured/connected */
   const [llmReady, setLlmReady] = useState<boolean | null>(null)
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
-  const [rightTab, setRightTab] = useState<'browser' | 'files' | 'logs'>('browser')
+  const [rightTab, setRightTab] = useState<RightTab>('browser')
+  const [reportPreview, setReportPreview] = useState<ReportPreviewPayload | null>(null)
+  const prevRightTabRef = useRef<Exclude<RightTab, 'report'>>('browser')
   const [scheduledCount, setScheduledCount] = useState(0)
   const [liveShotB64, setLiveShotB64] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -155,6 +159,51 @@ export default function App() {
     })
   }, [])
 
+  const showRightPanel = useCallback(() => {
+    setRightPanelHidden(false)
+    try {
+      localStorage.setItem('aip_right_panel_hidden', '0')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const openReportPreview = useCallback(
+    (payload: ReportPreviewPayload) => {
+      setRightTab((current) => {
+        if (current !== 'report') {
+          prevRightTabRef.current = current
+        }
+        return 'report'
+      })
+      setReportPreview(payload)
+      showRightPanel()
+    },
+    [showRightPanel],
+  )
+
+  const closeReportPreview = useCallback(() => {
+    setReportPreview(null)
+    setRightTab(prevRightTabRef.current)
+  }, [])
+
+  const onRightTabChange = useCallback(
+    (t: RightTab) => {
+      setRightTab((current) => {
+        if (t === 'report') {
+          if (!reportPreview) return current
+          if (current !== 'report') {
+            prevRightTabRef.current = current
+          }
+          return 'report'
+        }
+        prevRightTabRef.current = t
+        return t
+      })
+    },
+    [reportPreview],
+  )
+
   const refreshSessions = useCallback(async () => {
     try {
       const list = await api.listSessions()
@@ -231,7 +280,9 @@ export default function App() {
     setMessages([])
     setEvents([])
     setOpenFilePath(null)
+    setReportPreview(null)
     setRightTab('browser')
+    prevRightTabRef.current = 'browser'
     setView('agentbrowser')
     setAgentBrowserTab('agents')
     setAgentsPane('create')
@@ -242,7 +293,9 @@ export default function App() {
     setView('agentbrowser')
     setAgentBrowserTab('agents')
     setOpenFilePath(null)
+    setReportPreview(null)
     setRightTab('browser')
+    prevRightTabRef.current = 'browser'
     const [s, msgs, evs] = await Promise.all([
       api.getSession(id),
       api.getMessages(id),
@@ -387,9 +440,11 @@ export default function App() {
     await loadSession(s.id)
     if (files && files.length > 0) {
       setRightTab('files')
+      prevRightTabRef.current = 'files'
       setOpenFilePath(`uploads/${files[0].name}`)
     } else if (looksLikeGeneralChat(task)) {
       setRightTab('logs')
+      prevRightTabRef.current = 'logs'
     }
   }
 
@@ -428,6 +483,7 @@ export default function App() {
     inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'list'
   const showCreate =
     inAgentBrowser && agentBrowserTab === 'agents' && !activeId && agentsPane === 'create'
+  const shouldRenderRightPanel = showBrowserPanel || reportPreview !== null
 
   const agentsWorkspace = showSessionsList ? (
     <AgentSessionsPage
@@ -450,6 +506,7 @@ export default function App() {
         events={events}
         llmReady={llmReady}
         onSend={onSend}
+        onPreviewReport={openReportPreview}
         onControl={(action) => {
           if (!activeId) return
           void api.control(activeId, action).catch((e) => {
@@ -463,6 +520,7 @@ export default function App() {
         onOpenFile={(path) => {
           setOpenFilePath(path)
           setRightTab('files')
+          prevRightTabRef.current = 'files'
         }}
         onScheduled={() => {
           void refreshScheduledCount()
@@ -472,7 +530,7 @@ export default function App() {
           setAgentBrowserTab('scheduled')
         }}
       />
-      {showBrowserPanel && !rightPanelHidden ? (
+      {shouldRenderRightPanel && !rightPanelHidden ? (
         <>
           <PanelResizeHandle
             edge="start"
@@ -492,13 +550,15 @@ export default function App() {
             events={events}
             status={session?.status}
             tab={rightTab}
-            onTabChange={setRightTab}
+            onTabChange={onRightTabChange}
             focusFile={openFilePath}
             onHide={toggleRightPanel}
+            reportPreview={reportPreview}
+            onCloseReport={closeReportPreview}
             width={rightPanelWidth}
           />
         </>
-      ) : showBrowserPanel && rightPanelHidden ? (
+      ) : shouldRenderRightPanel && rightPanelHidden ? (
         <div className="w-11 border-l border-line bg-ink-900 flex flex-col items-center py-2 flex-shrink-0">
           <button
             type="button"

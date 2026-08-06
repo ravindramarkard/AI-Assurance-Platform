@@ -11,8 +11,7 @@ import EventLogsPanel from './EventLogsPanel'
 
 type Shot = { kind: 'b64' | 'url'; value: string } | null
 
-type NonReportTab = 'browser' | 'files' | 'logs'
-type Tab = NonReportTab | 'report'
+type Tab = 'browser' | 'files' | 'logs' | 'report'
 
 type Props = {
   sessionId: string | null
@@ -21,7 +20,7 @@ type Props = {
   events: Event[]
   status?: string
   tab?: Tab
-  onTabChange?: (t: NonReportTab) => void
+  onTabChange?: (t: Tab) => void
   focusFile?: string | null
   onHide?: () => void
   reportPreview?: ReportPreviewPayload | null
@@ -74,7 +73,7 @@ export default function RightPanel({
   const [internalTab, setInternalTab] = useState<Tab>('browser')
   const tab = controlledTab ?? internalTab
   const setTab = (t: Tab) => {
-    if (t !== 'report') onTabChange?.(t)
+    onTabChange?.(t)
     setInternalTab(t)
   }
 
