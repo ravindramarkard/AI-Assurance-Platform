@@ -17,6 +17,21 @@ _cancelled: set[str] = set()
 _target_workers = 1
 
 
+async def dispatch_session(session_id: str, task: str) -> None:
+    """
+    Dispatch one queue item.
+
+    If the orchestrator takes over (maybe_start=True), return early so the
+    worker slot is freed and we do not double-run the session.
+    """
+    from . import orchestrator
+
+    handled = await orchestrator.maybe_start(session_id, task)
+    if handled:
+        return
+    await agent_runner.run_session(session_id, task)
+
+
 async def enqueue(session_id: str, task: str) -> None:
     async with _lock:
         _cancelled.discard(session_id)
@@ -66,7 +81,7 @@ async def _worker(worker_id: int) -> None:
             continue
         logger.info("worker %d running session %s", worker_id, session_id)
         try:
-            await agent_runner.run_session(session_id, task)
+            await dispatch_session(session_id, task)
         except Exception:
             logger.exception("worker %d crash on %s", worker_id, session_id)
         finally:
@@ -78,13 +93,13 @@ async def recover_stuck_sessions() -> None:
     from . import db
 
     try:
-        sessions = await db.list_sessions()
+        sessions = await db.list_sessions(include_children=True)
     except Exception:
         logger.exception("recover_stuck_sessions: list failed")
         return
     n = 0
     for s in sessions:
-        if s.get("status") in ("queued", "running"):
+        if s.get("status") in ("queued", "running", "planning", "aggregating"):
             sid = s["id"]
             task = s.get("task") or ""
             await db.update_session(sid, status="queued", error=None)

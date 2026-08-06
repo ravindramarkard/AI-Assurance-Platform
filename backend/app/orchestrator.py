@@ -67,6 +67,27 @@ async def maybe_start(session_id: str, task: str) -> bool:
     if str(sess.get("role") or "root") == "child":
         return False
 
+    # Resume path: if an orchestrator already has a persisted plan_json, do NOT re-plan.
+    # This is critical for recovery after restarts (planning/dispatch must be idempotent).
+    if str(sess.get("role") or "").lower() == "orchestrator" and sess.get("plan_json"):
+        try:
+            raw = sess.get("plan_json")
+            plan = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            plan = None
+        if isinstance(plan, dict):
+            cfg = await effective_settings()
+            await db.update_session(session_id, status="running", error=None)
+            await _emit(session_id, "plan_ready", {"plan": plan})
+            await _emit(
+                session_id,
+                "status",
+                {"status": "running", "message": "Orchestrator resumed"},
+            )
+            # Free the queue worker slot.
+            asyncio.create_task(_run_orchestrator(session_id, task, plan, cfg))
+            return True
+
     cfg = await effective_settings()
     force = bool(sess.get("force_parallel"))
     mode = str(cfg.get("parallel_execution_mode") or "auto")
@@ -280,6 +301,26 @@ async def _run_orchestrator(
     all_results: list[dict[str, Any]] = []
 
     try:
+        # Resume support: if some branches already completed, do not re-run them.
+        completed_by_branch: dict[str, dict[str, Any]] = {}
+        try:
+            existing = await db.list_child_sessions(parent_id)
+        except Exception:
+            existing = []
+        for row in existing:
+            bid = row.get("branch_id")
+            if not bid:
+                continue
+            if str(row.get("status") or "").lower() != "completed":
+                continue
+            k = str(bid)
+            prev = completed_by_branch.get(k)
+            if prev is None:
+                completed_by_branch[k] = row
+                continue
+            if int(row.get("attempt") or 1) >= int(prev.get("attempt") or 1):
+                completed_by_branch[k] = row
+
         phases = list(plan.get("phases") or [])
         for ph in phases:
             mode = str((ph or {}).get("mode") or "parallel").strip().lower()
@@ -289,6 +330,23 @@ async def _run_orchestrator(
             await _emit(parent_id, "phase_started", {"mode": mode, "count": len(branches)})
             if mode == "serial":
                 for br in branches:
+                    br_id = str((br or {}).get("id") or "")
+                    if br_id and br_id in completed_by_branch:
+                        done = completed_by_branch[br_id]
+                        cid = str(done.get("id") or "")
+                        summary = await _branch_summary(cid) if cid else None
+                        all_results.append(
+                            {
+                                "branch_id": br_id,
+                                "title": (br or {}).get("title"),
+                                "status": "completed",
+                                "summary": summary,
+                                "error": None,
+                                "child_id": cid,
+                                "attempt": int(done.get("attempt") or 1),
+                            }
+                        )
+                        continue
                     ch = await _spawn_child(
                         parent_id,
                         parent_task,
@@ -304,22 +362,46 @@ async def _run_orchestrator(
                     )
                     all_results.extend(res)
             else:
+                to_spawn = []
+                for br in branches:
+                    br_id = str((br or {}).get("id") or "")
+                    if br_id and br_id in completed_by_branch:
+                        done = completed_by_branch[br_id]
+                        cid = str(done.get("id") or "")
+                        summary = await _branch_summary(cid) if cid else None
+                        all_results.append(
+                            {
+                                "branch_id": br_id,
+                                "title": (br or {}).get("title"),
+                                "status": "completed",
+                                "summary": summary,
+                                "error": None,
+                                "child_id": cid,
+                                "attempt": int(done.get("attempt") or 1),
+                            }
+                        )
+                    else:
+                        to_spawn.append(br)
+
                 kids = await _spawn_children(
                     parent_id,
                     parent_task,
-                    branches,  # type: ignore[arg-type]
+                    to_spawn,  # type: ignore[arg-type]
                     runtime_url=runtime_url,
                 )
-                res = await _await_children(
-                    parent_id,
-                    parent_task,
-                    kids,
-                    cfg=cfg,
-                    runtime_url=runtime_url,
-                )
-                all_results.extend(res)
+                if kids:
+                    res = await _await_children(
+                        parent_id,
+                        parent_task,
+                        kids,
+                        cfg=cfg,
+                        runtime_url=runtime_url,
+                    )
+                    all_results.extend(res)
             await _emit(parent_id, "phase_finished", {"mode": mode})
 
+        await db.update_session(parent_id, status="aggregating", error=None)
+        await _emit(parent_id, "status", {"status": "aggregating"})
         report = await aggregate_results(parent_task, all_results, cfg=cfg)
         final_status = _status_rollup([r.get("status") for r in all_results])  # type: ignore[arg-type]
         await db.update_session(parent_id, status=final_status, aggregate_report=report, error=None)

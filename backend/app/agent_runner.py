@@ -939,11 +939,88 @@ async def run_session(session_id: str, task: str) -> None:
         await _auto_recording_gif(session_id, sdir)
 
 
-async def control_agent(session_id: str, action: str) -> bool:
+async def stop_session_tree(session_id: str) -> bool:
+    """
+    Stop a session and its descendants (parent first, then children).
+
+    Designed for orchestrators which run out-of-band (not tracked in _live) and
+    for stop cascades that must not recurse infinitely.
+    """
+    from . import human_input as hitl
+    from .queue import cancel_queued
+
+    visited: set[str] = set()
+    order: list[str] = []
+    q: list[str] = [session_id]
+    while q:
+        sid = q.pop(0)
+        if sid in visited:
+            continue
+        visited.add(sid)
+        order.append(sid)
+        try:
+            kids = await db.list_child_sessions(sid)
+        except Exception:
+            kids = []
+        for ch in kids:
+            cid = str(ch.get("id") or "")
+            if cid and cid not in visited:
+                q.append(cid)
+
+    stopped_any = False
+    for sid in order:
+        sess = await db.get_session(sid)
+        if not sess:
+            continue
+        status = str(sess.get("status") or "").lower()
+        if status in ("completed", "failed", "stopped"):
+            continue
+
+        # Mark cancelled so any orchestrator polling notices quickly.
+        try:
+            await cancel_queued(sid)
+        except Exception:
+            pass
+
+        agent = _live.get(sid)
+        if agent is not None:
+            try:
+                if hasattr(agent, "stop"):
+                    agent.stop()
+                elif hasattr(agent, "pause"):
+                    agent.pause()
+            except Exception:
+                pass
+
+        try:
+            hitl.cancel(sid)
+        except Exception:
+            pass
+
+        await db.update_session(sid, hitl_pending=None, status="stopped")
+        msg = "Removed from queue" if status == "queued" else "Stopped"
+        await _emit(sid, "status", {"status": "stopped", "message": msg})
+        stopped_any = True
+
+    return stopped_any
+
+
+async def control_agent(session_id: str, action: str, *, _cascade: bool = True) -> bool:
     from . import human_input as hitl
 
     agent = _live.get(session_id)
     try:
+        if action == "stop" and _cascade:
+            sess = await db.get_session(session_id)
+            if sess and str(sess.get("role") or "").lower() == "orchestrator":
+                return await stop_session_tree(session_id)
+            try:
+                kids = await db.list_child_sessions(session_id)
+            except Exception:
+                kids = []
+            if kids:
+                return await stop_session_tree(session_id)
+
         if action == "stop" and not agent:
             # Cancel a session still waiting in the queue
             from .queue import cancel_queued
