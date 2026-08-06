@@ -70,6 +70,34 @@ class TestQueueDispatchRecoveryStop(unittest.IsolatedAsyncioTestCase):
         enq_ids = [c.args[0] for c in enqueue.call_args_list]
         self.assertCountEqual(enq_ids, ["a", "b", "c", "d", "ch1"])
 
+    async def test_recover_skips_children_of_resumable_orchestrator(self):
+        from app import queue
+
+        sessions = [
+            {"id": "orch", "task": "to", "status": "running", "role": "orchestrator"},
+            {"id": "k1", "task": "t1", "status": "running", "role": "child", "parent_id": "orch"},
+            {"id": "k2", "task": "t2", "status": "queued", "role": "child", "parent_id": "orch"},
+            # Orphaned child: its parent already finished, so recovery still owns it.
+            {"id": "dead", "task": "td", "status": "completed", "role": "orchestrator"},
+            {"id": "k3", "task": "t3", "status": "running", "role": "child", "parent_id": "dead"},
+        ]
+
+        enqueue = AsyncMock()
+        with patch("app.db.list_sessions", new=AsyncMock(return_value=sessions)):
+            with patch("app.db.update_session", new=AsyncMock()) as update_session:
+                with patch("app.queue.enqueue", new=enqueue):
+                    await queue.recover_stuck_sessions()
+
+        enq_ids = [c.args[0] for c in enqueue.call_args_list]
+        self.assertCountEqual(
+            enq_ids,
+            ["orch", "k3"],
+            "children of a resumable orchestrator must be left to the orchestrator",
+        )
+        touched = [c.args[0] for c in update_session.call_args_list]
+        self.assertNotIn("k1", touched)
+        self.assertNotIn("k2", touched)
+
     async def test_orchestrator_maybe_start_prefers_resume_when_plan_json_exists(self):
         from app import orchestrator
 

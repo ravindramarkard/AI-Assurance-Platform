@@ -103,7 +103,19 @@ def _task_with_attachments(task: str, session_id: str, saved: list[str]) -> str:
 
 @router.get("")
 async def list_sessions():
-    return await db.list_sessions(include_children=False)
+    rows = [_public_session(s) for s in await db.list_sessions(include_children=False)]
+    orchestrator_ids = [
+        str(r["id"])
+        for r in rows
+        if r.get("id") and str(r.get("role") or "").lower() == "orchestrator"
+    ]
+    if orchestrator_ids:
+        stats = await db.child_stats_bulk(orchestrator_ids)
+        for r in rows:
+            found = stats.get(str(r.get("id")))
+            if found is not None:
+                r["child_stats"] = found
+    return rows
 
 
 @router.post("")

@@ -114,6 +114,6 @@ def parse_plan(raw: str | dict[str, Any], *, max_branches: int) -> dict[str, Any
     return {
         "should_parallelize": should,
         "reason": str(data.get("reason") or ""),
-        "phases": phases if should else phases,
+        "phases": phases,
         "truncated": truncated,
     }

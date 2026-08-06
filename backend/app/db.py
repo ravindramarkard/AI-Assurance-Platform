@@ -351,37 +351,76 @@ async def list_child_sessions(parent_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in await cur.fetchall()]
 
 
+CHILD_STAT_KEYS = (
+    "total",
+    "queued",
+    "running",
+    "waiting_for_input",
+    "paused",
+    "completed",
+    "failed",
+    "stopped",
+)
+
+# `waiting_for_input` is a real session status; the hitl_pending check only
+# covers rows written before the status existed. `paused` stays its own bucket
+# so a pausable child is never reported as stopped.
+_CHILD_STATS_COLUMNS = """
+    COUNT(*) AS total,
+    SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+    SUM(CASE WHEN status = 'running' AND hitl_pending IS NULL THEN 1 ELSE 0 END) AS running,
+    SUM(CASE
+          WHEN status = 'waiting_for_input'
+            OR (status = 'running' AND hitl_pending IS NOT NULL) THEN 1
+          ELSE 0 END) AS waiting_for_input,
+    SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) AS paused,
+    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+    SUM(CASE WHEN status = 'stopped' THEN 1 ELSE 0 END) AS stopped
+"""
+
+
+def _empty_child_stats() -> dict[str, int]:
+    return {k: 0 for k in CHILD_STAT_KEYS}
+
+
 async def child_stats(parent_id: str) -> dict[str, int]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
-            """
-            SELECT
-              COUNT(*) AS total,
-              SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
-              SUM(CASE WHEN status = 'running' AND hitl_pending IS NULL THEN 1 ELSE 0 END) AS running,
-              SUM(CASE WHEN status = 'running' AND hitl_pending IS NOT NULL THEN 1 ELSE 0 END) AS waiting_for_input,
-              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
-              SUM(CASE WHEN status IN ('stopped', 'paused') THEN 1 ELSE 0 END) AS stopped
-            FROM sessions
-            WHERE parent_id = ?
-            """,
+            f"SELECT {_CHILD_STATS_COLUMNS} FROM sessions WHERE parent_id = ?",
             (parent_id,),
         )
         row = await cur.fetchone()
         if not row:
-            return {
-                "total": 0,
-                "queued": 0,
-                "running": 0,
-                "waiting_for_input": 0,
-                "completed": 0,
-                "failed": 0,
-                "stopped": 0,
-            }
+            return _empty_child_stats()
         d = dict(row)
-        return {k: int(d.get(k) or 0) for k in ("total", "queued", "running", "waiting_for_input", "completed", "failed", "stopped")}
+        return {k: int(d.get(k) or 0) for k in CHILD_STAT_KEYS}
+
+
+async def child_stats_bulk(parent_ids: list[str]) -> dict[str, dict[str, int]]:
+    """One grouped query for many parents (avoids N+1 on the sessions list)."""
+    ids = [str(p) for p in parent_ids if p]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            f"""
+            SELECT parent_id, {_CHILD_STATS_COLUMNS}
+            FROM sessions
+            WHERE parent_id IN ({placeholders})
+            GROUP BY parent_id
+            """,
+            ids,
+        )
+        rows = await cur.fetchall()
+    out = {pid: _empty_child_stats() for pid in ids}
+    for row in rows:
+        d = dict(row)
+        out[str(d.get("parent_id"))] = {k: int(d.get(k) or 0) for k in CHILD_STAT_KEYS}
+    return out
 
 
 async def update_session(session_id: str, **fields: Any) -> None:

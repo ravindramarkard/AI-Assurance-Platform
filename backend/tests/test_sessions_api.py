@@ -58,6 +58,24 @@ class TestSessionEnrichment(unittest.IsolatedAsyncioTestCase):
         self.assertIn("plan_json", enriched)
         self.assertEqual(enriched["child_stats"]["total"], 1)
 
+    async def test_list_route_attaches_child_stats_to_orchestrators(self):
+        from app import db
+        from app.routes.sessions import list_sessions
+
+        plain = await db.create_session("plain root")
+        parent = await db.create_session("parent")
+        await db.update_session(parent["id"], role="orchestrator")
+        child = await db.create_session(
+            "child", parent_id=parent["id"], role="child", branch_id="b1"
+        )
+        await db.update_session(child["id"], status="waiting_for_input")
+
+        rows = {r["id"]: r for r in await list_sessions()}
+        self.assertNotIn(child["id"], rows, "children stay out of the top-level list")
+        self.assertIsNone(rows[plain["id"]].get("child_stats"))
+        self.assertEqual(rows[parent["id"]]["child_stats"]["total"], 1)
+        self.assertEqual(rows[parent["id"]]["child_stats"]["waiting_for_input"], 1)
+
     async def test_get_children_route_returns_child_sessions(self):
         from app import db
         from app.routes.sessions import get_children

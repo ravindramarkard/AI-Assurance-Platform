@@ -88,6 +88,12 @@ async def _worker(worker_id: int) -> None:
             clear_cancelled(session_id)
 
 
+_STUCK_STATUSES = ("queued", "running", "planning", "aggregating")
+# An orchestrator in one of these states will be resumed and will re-drive its
+# own children, so recovery must leave those children alone.
+_RESUMABLE_ORCHESTRATOR_STATUSES = ("planning", "aggregating", "running")
+
+
 async def recover_stuck_sessions() -> None:
     """Re-enqueue DB sessions stuck in queued/running after a process restart."""
     from . import db
@@ -97,16 +103,35 @@ async def recover_stuck_sessions() -> None:
     except Exception:
         logger.exception("recover_stuck_sessions: list failed")
         return
+
+    # Snapshot before mutating: the parent's own status is rewritten below.
+    resumable_orchestrators = {
+        str(s.get("id"))
+        for s in sessions
+        if str(s.get("role") or "").lower() == "orchestrator"
+        and s.get("status") in _RESUMABLE_ORCHESTRATOR_STATUSES
+    }
+
     n = 0
+    skipped = 0
     for s in sessions:
-        if s.get("status") in ("queued", "running", "planning", "aggregating"):
-            sid = s["id"]
-            task = s.get("task") or ""
-            await db.update_session(sid, status="queued", error=None)
-            await enqueue(sid, task)
-            n += 1
-    if n:
-        logger.info("re-enqueued %d stuck session(s)", n)
+        if s.get("status") not in _STUCK_STATUSES:
+            continue
+        parent_id = s.get("parent_id")
+        if parent_id and str(parent_id) in resumable_orchestrators:
+            skipped += 1
+            continue
+        sid = s["id"]
+        task = s.get("task") or ""
+        await db.update_session(sid, status="queued", error=None)
+        await enqueue(sid, task)
+        n += 1
+    if n or skipped:
+        logger.info(
+            "re-enqueued %d stuck session(s); left %d child(ren) to their orchestrator",
+            n,
+            skipped,
+        )
 
 
 def _spawn_workers(n: int) -> None:
