@@ -152,6 +152,29 @@ function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s
 }
 
+function planItemToString(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v.trim()
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    for (const key of ['title', 'task', 'content', 'text', 'goal', 'id'] as const) {
+      const val = o[key]
+      if (val != null && String(val).trim()) return String(val).trim()
+    }
+    return ''
+  }
+  return String(v).trim()
+}
+
+function isChildWaitingForInput(c: Session): boolean {
+  if (c.status === 'waiting_for_input') return true
+  const hitl = c.hitl_pending
+  if (hitl && typeof hitl === 'object') return true
+  if (typeof hitl === 'string' && hitl.trim()) return true
+  return false
+}
+
 function actionToCode(action: string): string {
   const name = actionName(action)
   const p = kv(action)
@@ -266,7 +289,7 @@ function extractPlan(steps: Event[]): { plan: string[]; thoughtBody: string } {
     const rawPlan = (fields as Record<string, unknown>).plan_update
     if (Array.isArray(rawPlan)) {
       for (const item of rawPlan) {
-        const s = String(item).trim()
+        const s = planItemToString(item)
         if (s && !plan.includes(s)) plan.push(s)
       }
     } else if (typeof rawPlan === 'string') {
@@ -274,7 +297,7 @@ function extractPlan(steps: Event[]): { plan: string[]; thoughtBody: string } {
         const parsed = JSON.parse(rawPlan)
         if (Array.isArray(parsed)) {
           for (const item of parsed) {
-            const s = String(item).trim()
+            const s = planItemToString(item)
             if (s && !plan.includes(s)) plan.push(s)
           }
         }
@@ -405,7 +428,7 @@ function extractSessionPlan(session: Session | null): string[] {
   const out: string[] = []
 
   const add = (v: unknown) => {
-    const s = String(v ?? '').trim()
+    const s = planItemToString(v)
     if (!s) return
     if (!out.includes(s)) out.push(s)
   }
@@ -742,7 +765,7 @@ export default function ChatPanel({
   const hitlPending = parseHitlPending(session, events)
   const waitingForInput = session.status === 'waiting_for_input'
   const planOutline = extractSessionPlan(session)
-  const waitingChildren = (children || []).filter((c) => c.status === 'waiting_for_input')
+  const waitingChildren = (children || []).filter(isChildWaitingForInput)
 
   return (
     <main className="flex-1 flex flex-col min-w-0 bg-ink-900">
@@ -968,7 +991,7 @@ export default function ChatPanel({
                               {c.branch_id ? String(c.branch_id) : '—'}
                             </td>
                             <td className="px-3 py-2.5 align-middle mono text-[12px] text-slate-400">
-                              {String((c as unknown as { attempt?: number | string }).attempt ?? '—')}
+                              {c.attempt != null ? String(c.attempt) : '—'}
                             </td>
                             <td className="px-3 py-2.5 align-middle">
                               <span

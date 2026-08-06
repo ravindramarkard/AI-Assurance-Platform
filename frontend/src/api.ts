@@ -20,6 +20,7 @@ export type Session = {
   parent_id?: string | null
   role?: 'root' | 'orchestrator' | 'child' | string
   branch_id?: string | null
+  attempt?: number | null
   force_parallel?: boolean | number
   aggregate_report?: string | null
   plan?: unknown
