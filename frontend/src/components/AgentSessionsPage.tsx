@@ -32,7 +32,13 @@ function formatDuration(startIso: string, endIso: string, status: string): strin
   const a = Date.parse(startIso)
   const b = Date.parse(endIso)
   if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return '—'
-  const live = status === 'running' || status === 'queued' || status === 'paused' || status === 'waiting_for_input'
+  const live =
+    status === 'running' ||
+    status === 'queued' ||
+    status === 'paused' ||
+    status === 'waiting_for_input' ||
+    status === 'planning' ||
+    status === 'aggregating'
   const end = live ? Date.now() : b
   let sec = Math.max(0, Math.round((end - a) / 1000))
   if (sec < 60) return `${sec}s`
@@ -50,6 +56,12 @@ function statusLabel(status: string, t: (k: import('../i18n/locales/en').Message
       return t('statusSucceeded')
     case 'failed':
       return t('statusFailed')
+    case 'partial':
+      return t('statusPartial')
+    case 'planning':
+      return t('statusPlanning')
+    case 'aggregating':
+      return t('statusAggregating')
     case 'running':
       return t('statusRunning')
     case 'queued':
@@ -71,6 +83,12 @@ function statusClass(status: string): string {
       return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
     case 'failed':
       return 'bg-red-500/15 text-red-400 border-red-500/30'
+    case 'partial':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    case 'planning':
+      return 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+    case 'aggregating':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
     case 'running':
       return 'bg-bu-500/15 text-bu-400 border-bu-500/30'
     case 'queued':
@@ -246,6 +264,11 @@ export default function AgentSessionsPage({
                         {s.model && (
                           <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-line text-slate-500">
                             {s.model.length > 18 ? `${s.model.slice(0, 16)}…` : s.model}
+                          </span>
+                        )}
+                        {s.role === 'orchestrator' && (
+                          <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-bu-500/30 bg-bu-500/10 text-bu-400">
+                            {s.child_stats?.total ?? 0} {t('subagents')}
                           </span>
                         )}
                         <span className="opacity-0 group-hover:opacity-100 text-slate-500 flex-shrink-0">

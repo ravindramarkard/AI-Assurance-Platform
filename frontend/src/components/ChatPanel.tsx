@@ -8,6 +8,7 @@ import {
   type Session,
 } from '../api'
 import { suggestFollowUps } from '../followUpPrompts'
+import { contentToHtmlBody } from '../messageExport'
 import type { ReportPreviewPayload } from '../messageExport'
 import { usePreferences } from '../preferences'
 import { thoughtCopyText } from '../thoughtCopyText'
@@ -32,6 +33,7 @@ type Props = {
   onPreviewReport?: (payload: ReportPreviewPayload) => void
   onScheduled?: () => void
   onOpenScheduled?: () => void
+  onOpenSession?: (id: string) => void
 }
 
 function formatDuration(ms: number): string {
@@ -346,6 +348,106 @@ function parseHitlPending(session: Session | null, events: Event[]): HitlPending
   }
 }
 
+function statusLabel(status: string, t: (k: import('../i18n/locales/en').MessageKey) => string): string {
+  switch (status) {
+    case 'completed':
+      return t('statusSucceeded')
+    case 'failed':
+      return t('statusFailed')
+    case 'partial':
+      return t('statusPartial')
+    case 'planning':
+      return t('statusPlanning')
+    case 'aggregating':
+      return t('statusAggregating')
+    case 'running':
+      return t('statusRunning')
+    case 'queued':
+      return t('statusQueued')
+    case 'paused':
+      return t('statusPaused')
+    case 'waiting_for_input':
+      return t('waitingForInput')
+    case 'stopped':
+      return t('statusStopped')
+    default:
+      return status || '—'
+  }
+}
+
+function statusClass(status: string): string {
+  switch (status) {
+    case 'completed':
+      return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+    case 'failed':
+      return 'bg-red-500/15 text-red-400 border-red-500/30'
+    case 'partial':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    case 'planning':
+      return 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+    case 'aggregating':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    case 'running':
+      return 'bg-bu-500/15 text-bu-400 border-bu-500/30'
+    case 'queued':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    case 'paused':
+      return 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30'
+    case 'waiting_for_input':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+    default:
+      return 'bg-slate-500/15 text-slate-400 border-slate-500/30'
+  }
+}
+
+function extractSessionPlan(session: Session | null): string[] {
+  if (!session) return []
+  const out: string[] = []
+
+  const add = (v: unknown) => {
+    const s = String(v ?? '').trim()
+    if (!s) return
+    if (!out.includes(s)) out.push(s)
+  }
+
+  const consume = (raw: unknown) => {
+    if (!raw) return
+    if (Array.isArray(raw)) {
+      for (const item of raw) add(item)
+      return
+    }
+    if (typeof raw === 'string') {
+      for (const line of raw.split('\n')) {
+        const s = line.replace(/^\s*[-*]\s+/, '').trim()
+        if (s) add(s)
+      }
+      return
+    }
+    if (typeof raw === 'object') {
+      const o = raw as Record<string, unknown>
+      if (Array.isArray(o.plan)) {
+        for (const item of o.plan) add(item)
+      }
+      if (Array.isArray(o.steps)) {
+        for (const item of o.steps) add(item)
+      }
+      if (Array.isArray(o.items)) {
+        for (const item of o.items) add(item)
+      }
+    }
+  }
+
+  if (session.plan_json) {
+    try {
+      consume(JSON.parse(session.plan_json))
+    } catch {
+      consume(session.plan_json)
+    }
+  }
+  consume(session.plan)
+  return out.slice(0, 12)
+}
+
 export default function ChatPanel({
   session,
   sessions = [],
@@ -359,6 +461,7 @@ export default function ChatPanel({
   onPreviewReport,
   onScheduled,
   onOpenScheduled,
+  onOpenSession,
 }: Props) {
   const { t } = usePreferences()
   const canSend = llmReady === true
@@ -373,6 +476,8 @@ export default function ChatPanel({
   const [dismissedFollowUps, setDismissedFollowUps] = useState(false)
   const [stickToBottom, setStickToBottom] = useState(true)
   const [submittingHitl, setSubmittingHitl] = useState(false)
+  const [children, setChildren] = useState<Session[]>([])
+  const [childrenErr, setChildrenErr] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
@@ -406,7 +511,9 @@ export default function ChatPanel({
       session.status === 'queued' ||
       session.status === 'paused' ||
       session.status === 'thinking' ||
-      session.status === 'waiting_for_input'
+      session.status === 'waiting_for_input' ||
+      session.status === 'planning' ||
+      session.status === 'aggregating'
     ) {
       onControl('stop')
     }
@@ -429,7 +536,44 @@ export default function ChatPanel({
     session?.status === 'queued' ||
     session?.status === 'paused' ||
     session?.status === 'waiting_for_input' ||
-    session?.status === 'thinking'
+    session?.status === 'thinking' ||
+    session?.status === 'planning' ||
+    session?.status === 'aggregating'
+
+  const childEventToken = useMemo(() => {
+    if (session?.role !== 'orchestrator') return ''
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]
+      if (String(e.type || '').startsWith('child_')) {
+        return String(e.id || e.created_at || i)
+      }
+    }
+    return ''
+  }, [events, session?.role])
+
+  useEffect(() => {
+    if (!session || session.role !== 'orchestrator') {
+      setChildren([])
+      setChildrenErr('')
+      return
+    }
+    let cancelled = false
+    api
+      .listSessionChildren(session.id)
+      .then((list) => {
+        if (cancelled) return
+        setChildren(list || [])
+        setChildrenErr('')
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setChildren([])
+        setChildrenErr(e instanceof Error ? e.message : 'Failed to load children')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.id, session?.role, childEventToken])
 
   const followUps = useMemo(() => {
     if (!session || thinking || dismissedFollowUps) return []
@@ -597,6 +741,8 @@ export default function ChatPanel({
 
   const hitlPending = parseHitlPending(session, events)
   const waitingForInput = session.status === 'waiting_for_input'
+  const planOutline = extractSessionPlan(session)
+  const waitingChildren = (children || []).filter((c) => c.status === 'waiting_for_input')
 
   return (
     <main className="flex-1 flex flex-col min-w-0 bg-ink-900">
@@ -629,7 +775,7 @@ export default function ChatPanel({
             {session.step_count} {t('steps')}
           </span>
           <span className="px-2 py-0.5 rounded bg-ink-800 border border-line capitalize text-[11px]">
-            {session.status === 'waiting_for_input' ? t('waitingForInput') : session.status}
+            {statusLabel(session.status, t)}
           </span>
           {(session.status === 'running' || session.status === 'thinking') && (
             <>
@@ -737,12 +883,161 @@ export default function ChatPanel({
         </div>
       )}
 
+      {session.role === 'child' && session.parent_id && (
+        <div className="mx-4 mt-3 text-xs border border-bu-500/30 bg-bu-500/10 text-slate-200 rounded-md px-3 py-2 flex items-center justify-between gap-3">
+          <span className="truncate">
+            <span className="text-bu-400 font-semibold mr-1.5">⎇</span>
+            {t('subagentOf')}{' '}
+            <span className="mono text-slate-300">{String(session.parent_id).slice(0, 8)}…</span>
+          </span>
+          <button
+            type="button"
+            disabled={!onOpenSession}
+            onClick={() => onOpenSession?.(String(session.parent_id))}
+            className="text-bu-400 hover:underline whitespace-nowrap disabled:opacity-50 disabled:hover:no-underline"
+            title={t('openParentSession')}
+          >
+            {t('openParentSession')} →
+          </button>
+        </div>
+      )}
+
       <div className="relative flex-1 min-h-0 flex flex-col">
         <div
           ref={scrollRef}
           onScroll={onTimelineScroll}
           className="flex-1 overflow-y-auto scroll p-6 space-y-5"
         >
+        {session.role === 'orchestrator' && (
+          <div className="max-w-3xl space-y-4">
+            <div className="rounded-xl border border-line/80 bg-ink-850/40 overflow-hidden">
+              <div className="px-4 py-3 border-b border-line/50 flex items-center gap-2">
+                <span className="text-bu-400 font-semibold">⎇</span>
+                <span className="text-slate-200 font-medium">{t('parallelSubagents')}</span>
+                <span className="ml-auto text-[11px] text-slate-500 tabular-nums">
+                  {(children || []).length} {t('subagents')}
+                </span>
+              </div>
+              <div className="p-4 space-y-4">
+                {planOutline.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {t('planOutline')}
+                    </div>
+                    <ol className="list-decimal pl-5 space-y-1.5 text-[14px] text-slate-300 leading-[1.5]">
+                      {planOutline.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {childrenErr && (
+                  <div className="text-xs border border-red-700/40 bg-red-950/30 text-red-300 rounded-md px-3 py-2">
+                    {childrenErr}
+                  </div>
+                )}
+
+                <div className="overflow-hidden rounded-lg border border-line bg-ink-950/40">
+                  <table className="w-full text-left text-[13px]">
+                    <thead>
+                      <tr className="border-b border-line text-[11px] uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2.5 font-medium">{t('colGoal')}</th>
+                        <th className="px-3 py-2.5 font-medium w-[120px]">{t('branchId')}</th>
+                        <th className="px-3 py-2.5 font-medium w-[88px]">{t('attempt')}</th>
+                        <th className="px-3 py-2.5 font-medium w-[140px]">{t('colStatus')}</th>
+                        <th className="px-3 py-2.5 font-medium w-[90px]">{t('open')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(children || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-8 text-center text-slate-500 text-sm">
+                            {t('noSubagentsYet')}
+                          </td>
+                        </tr>
+                      ) : (
+                        (children || []).map((c) => (
+                          <tr key={c.id} className="border-b border-line/80 last:border-0">
+                            <td className="px-3 py-2.5 align-middle text-slate-200">
+                              <span className="truncate block max-w-[340px]">
+                                {c.title || c.task || t('untitled')}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 align-middle mono text-[12px] text-slate-400">
+                              {c.branch_id ? String(c.branch_id) : '—'}
+                            </td>
+                            <td className="px-3 py-2.5 align-middle mono text-[12px] text-slate-400">
+                              {String((c as unknown as { attempt?: number | string }).attempt ?? '—')}
+                            </td>
+                            <td className="px-3 py-2.5 align-middle">
+                              <span
+                                className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusClass(
+                                  c.status,
+                                )}`}
+                              >
+                                {statusLabel(c.status, t)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 align-middle">
+                              <button
+                                type="button"
+                                disabled={!onOpenSession}
+                                onClick={() => onOpenSession?.(c.id)}
+                                className="px-2.5 py-1 rounded-md border border-line bg-ink-800 hover:border-bu-500/60 hover:text-bu-400 text-slate-300 font-medium text-[12px] disabled:opacity-50 disabled:hover:border-line disabled:hover:text-slate-300"
+                              >
+                                {t('open')}
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {waitingChildren.length > 0 && (
+                  <div className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-amber-300 font-semibold">
+                        {t('waitingChildren')} ({waitingChildren.length})
+                      </span>
+                      <span className="text-slate-500">{t('waitingForInput')}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {waitingChildren.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          disabled={!onOpenSession}
+                          onClick={() => onOpenSession?.(c.id)}
+                          className="px-2.5 py-1 rounded-lg border border-amber-700/40 bg-ink-900 hover:border-amber-500/60 text-amber-200 text-[12px] disabled:opacity-50"
+                          title={c.title || c.task || c.id}
+                        >
+                          {c.title || c.task || c.id.slice(0, 8)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {session.aggregate_report && (
+                  <div className="rounded-xl border border-line/80 bg-ink-850/40 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-line/50 flex items-center gap-2">
+                      <span className="text-bu-400 font-semibold">✦</span>
+                      <span className="text-slate-200 font-medium">{t('aggregateReport')}</span>
+                    </div>
+                    <div
+                      className="p-4 text-[14px] leading-[1.55] text-slate-200 md-preview"
+                      dangerouslySetInnerHTML={{ __html: contentToHtmlBody(session.aggregate_report) }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {timeline.map((item, idx) => {
           if (item.kind === 'message') {
             const m = item.message
@@ -1042,7 +1337,9 @@ export default function ChatPanel({
           session.status === 'thinking' ||
           session.status === 'paused' ||
           session.status === 'queued' ||
-          session.status === 'waiting_for_input') && (
+          session.status === 'waiting_for_input' ||
+          session.status === 'planning' ||
+          session.status === 'aggregating') && (
           <div
             className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-ink-850 px-3 py-2"
             role="toolbar"
@@ -1117,7 +1414,10 @@ export default function ChatPanel({
             <p className="text-[10px] text-slate-600 mt-1.5">{t('followUpHint')}</p>
           </div>
         )}
-        {(session.status === 'completed' || session.status === 'failed' || session.status === 'stopped') && (
+        {(session.status === 'completed' ||
+          session.status === 'failed' ||
+          session.status === 'stopped' ||
+          session.status === 'partial') && (
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

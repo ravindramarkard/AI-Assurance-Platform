@@ -513,6 +513,9 @@ export default function App() {
         llmReady={llmReady}
         onSend={onSend}
         onPreviewReport={openReportPreview}
+        onOpenSession={(id) => {
+          void loadSession(id)
+        }}
         onControl={(action) => {
           if (!activeId) return
           void api.control(activeId, action).catch((e) => {
