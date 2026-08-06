@@ -11,5 +11,10 @@ def set_run_opts(session_id: str, **kwargs: Any) -> None:
     _opts[session_id] = {k: v for k, v in kwargs.items() if v is not None}
 
 
+def get_run_opts(session_id: str) -> dict[str, Any]:
+    """Read options without consuming them (used by the orchestrator)."""
+    return dict(_opts.get(session_id, {}))
+
+
 def pop_run_opts(session_id: str) -> dict[str, Any]:
     return _opts.pop(session_id, {})
