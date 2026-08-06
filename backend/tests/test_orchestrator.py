@@ -67,7 +67,8 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
                                 "app.orchestrator.db.list_messages",
                                 new=AsyncMock(side_effect=_list_messages),
                             ):
-                                with patch("app.orchestrator._emit", new=AsyncMock()):
+                                emit = AsyncMock()
+                                with patch("app.orchestrator._emit", new=emit):
                                     results = await orchestrator._await_children(
                                         "p1",
                                         "Parent",
@@ -89,6 +90,70 @@ class TestOrchestrator(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0]["attempt"], 2)
         self.assertEqual(create_sess.await_count, 1)
         self.assertEqual(enqueue.await_count, 1)
+        child_finished = [
+            c.args[2] for c in emit.call_args_list if len(c.args) >= 3 and c.args[1] == "child_finished"
+        ]
+        self.assertEqual(len(child_finished), 2)
+        self.assertEqual(child_finished[0]["child_id"], "c1")
+        self.assertEqual(child_finished[0]["branch_id"], "p1.b1")
+        self.assertEqual(child_finished[0]["attempt"], 1)
+        self.assertEqual(child_finished[0]["status"], "failed")
+        self.assertEqual(child_finished[1]["child_id"], "c1r")
+        self.assertEqual(child_finished[1]["branch_id"], "p1.b1")
+        self.assertEqual(child_finished[1]["attempt"], 2)
+        self.assertEqual(child_finished[1]["status"], "completed")
+
+    async def test_run_orchestrator_serial_spawns_one_then_awaits(self):
+        plan = {
+            "phases": [
+                {
+                    "mode": "serial",
+                    "branches": [
+                        {"id": "b1", "title": "B1", "task": "Do B1"},
+                        {"id": "b2", "title": "B2", "task": "Do B2"},
+                    ],
+                }
+            ]
+        }
+
+        spawn_calls: list[str] = []
+        await_calls: list[str] = []
+
+        async def _spawn_child(parent_id: str, parent_task: str, br: dict, *, runtime_url=None):
+            spawn_calls.append(br["id"])
+            return {"child_id": f"c_{br['id']}", "branch_id": br["id"], "title": br["title"], "task": br["task"]}
+
+        async def _await_children(parent_id: str, parent_task: str, children: list[dict], *, cfg, runtime_url):
+            # Serial must not spawn b2 before awaiting b1 (and so on).
+            self.assertEqual(len(children), 1)
+            await_calls.append(children[0]["branch_id"])
+            self.assertEqual(len(spawn_calls), len(await_calls))
+            self.assertEqual(spawn_calls[-1], children[0]["branch_id"])
+            return [
+                {
+                    "branch_id": children[0]["branch_id"],
+                    "title": children[0]["title"],
+                    "status": "completed",
+                    "summary": None,
+                    "error": None,
+                    "child_id": children[0]["child_id"],
+                    "attempt": 1,
+                }
+            ]
+
+        with patch("app.orchestrator._parent_runtime_url", return_value=None):
+            with patch("app.orchestrator._emit", new=AsyncMock()):
+                with patch("app.orchestrator._spawn_children", new=AsyncMock()) as spawn_children:
+                    with patch("app.orchestrator._spawn_child", new=AsyncMock(side_effect=_spawn_child)):
+                        with patch("app.orchestrator._await_children", new=AsyncMock(side_effect=_await_children)):
+                            with patch("app.orchestrator.aggregate_results", new=AsyncMock(return_value="report")):
+                                with patch("app.orchestrator.db.update_session", new=AsyncMock()):
+                                    with patch("app.orchestrator.db.add_message", new=AsyncMock()):
+                                        await orchestrator._run_orchestrator("p1", "Parent", plan, cfg={})
+
+        self.assertEqual(spawn_calls, ["b1", "b2"])
+        self.assertEqual(await_calls, ["b1", "b2"])
+        self.assertEqual(spawn_children.await_count, 0)
 
 
 if __name__ == "__main__":

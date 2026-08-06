@@ -179,6 +179,11 @@ async def _await_children(
         status = str(row.get("status") or "failed").lower()
         attempt = int(row.get("attempt") or 1)
         error = row.get("error")
+        await _emit(
+            parent_id,
+            "child_finished",
+            {"child_id": child_id, "branch_id": branch_id, "attempt": attempt, "status": status},
+        )
 
         if status == "failed" and attempt <= 1:
             retry_task = build_child_task(
@@ -205,6 +210,11 @@ async def _await_children(
             attempt = int(row.get("attempt") or 2)
             error = row.get("error")
             child_id = new_id
+            await _emit(
+                parent_id,
+                "child_finished",
+                {"child_id": child_id, "branch_id": branch_id, "attempt": attempt, "status": status},
+            )
 
         summary = await _branch_summary(child_id)
         return {
@@ -228,29 +238,36 @@ async def _spawn_children(
     *,
     runtime_url: str | None,
 ) -> list[ChildHandle]:
-    out: list[ChildHandle] = []
-    for br in branches:
-        child_task = build_child_task(
-            parent_task=parent_task,
-            branch_title=br["title"],
-            branch_task=br["task"],
-            runtime_url=runtime_url,
-        )
-        child = await db.create_session(
-            child_task,
-            parent_id=parent_id,
-            role="child",
-            branch_id=br["id"],
-            force_parallel=False,
-            attempt=1,
-        )
-        cid = str(child["id"])
-        if runtime_url:
-            run_opts.set_run_opts(cid, runtime_url=runtime_url)
-        await _emit(parent_id, "child_spawned", {"branch_id": br["id"], "child_id": cid, "title": br["title"]})
-        await queue.enqueue(cid, child_task)
-        out.append({"child_id": cid, "branch_id": br["id"], "title": br["title"], "task": br["task"]})
-    return out
+    return [await _spawn_child(parent_id, parent_task, br, runtime_url=runtime_url) for br in branches]
+
+
+async def _spawn_child(
+    parent_id: str,
+    parent_task: str,
+    br: Branch,
+    *,
+    runtime_url: str | None,
+) -> ChildHandle:
+    child_task = build_child_task(
+        parent_task=parent_task,
+        branch_title=br["title"],
+        branch_task=br["task"],
+        runtime_url=runtime_url,
+    )
+    child = await db.create_session(
+        child_task,
+        parent_id=parent_id,
+        role="child",
+        branch_id=br["id"],
+        force_parallel=False,
+        attempt=1,
+    )
+    cid = str(child["id"])
+    if runtime_url:
+        run_opts.set_run_opts(cid, runtime_url=runtime_url)
+    await _emit(parent_id, "child_spawned", {"branch_id": br["id"], "child_id": cid, "title": br["title"]})
+    await queue.enqueue(cid, child_task)
+    return {"child_id": cid, "branch_id": br["id"], "title": br["title"], "task": br["task"]}
 
 
 async def _run_orchestrator(
@@ -269,17 +286,15 @@ async def _run_orchestrator(
             branches = list((ph or {}).get("branches") or [])
             if not branches:
                 continue
-
-            kids = await _spawn_children(
-                parent_id,
-                parent_task,
-                branches,  # type: ignore[arg-type]
-                runtime_url=runtime_url,
-            )
-
-            await _emit(parent_id, "phase_started", {"mode": mode, "count": len(kids)})
+            await _emit(parent_id, "phase_started", {"mode": mode, "count": len(branches)})
             if mode == "serial":
-                for ch in kids:
+                for br in branches:
+                    ch = await _spawn_child(
+                        parent_id,
+                        parent_task,
+                        br,  # type: ignore[arg-type]
+                        runtime_url=runtime_url,
+                    )
                     res = await _await_children(
                         parent_id,
                         parent_task,
@@ -289,6 +304,12 @@ async def _run_orchestrator(
                     )
                     all_results.extend(res)
             else:
+                kids = await _spawn_children(
+                    parent_id,
+                    parent_task,
+                    branches,  # type: ignore[arg-type]
+                    runtime_url=runtime_url,
+                )
                 res = await _await_children(
                     parent_id,
                     parent_task,
