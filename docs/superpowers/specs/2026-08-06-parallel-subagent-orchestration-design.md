@@ -95,9 +95,10 @@ When a normal (non-orchestrated) session is created today, `role='root'`, `paren
 
 | Actor | Flow |
 |-------|------|
-| Orchestrator | `queued` → `planning` → `running` → `aggregating` → `done` \| `partial` \| `failed` |
-| Child | `queued` → `running` → `done` \| `failed` \| `stopped` (unchanged) |
+| Orchestrator | `queued` → `planning` → `running` → `aggregating` → `completed` \| `partial` \| `failed` |
+| Child | `queued` → `running` → `completed` \| `failed` \| `stopped` (unchanged) |
 
+- Use existing terminal status **`completed`** (not `done`) for success, matching AgentBrowser today.
 - `partial`: ≥1 child failed after retry; ≥1 child succeeded.
 - `failed`: planning hard-fail (forced parallel), or all branches failed, or parent stopped.
 
@@ -198,7 +199,7 @@ New module `backend/app/orchestrator.py`:
 4. Await children by polling DB status and/or completion events (prefer asyncio wait with periodic DB poll to avoid new infra)
 5. On child `failed` with `attempt==1`: spawn retry (`attempt=2`), emit `child_retry`
 6. After all phases: gather final assistant messages / errors → aggregator LLM → `aggregate_report` + parent assistant message
-7. Set terminal status: `done` | `partial` | `failed`
+7. Set terminal status: `completed` | `partial` | `failed`
 
 Child task envelope includes: branch title/goal, truncated parent task for context, runtime URL / application URL, instruction not to expand beyond branch scope.
 
