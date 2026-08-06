@@ -3,22 +3,37 @@
 import {
   buildAgentObservations,
   buildAgentQaRows,
+  buildCriticalIssues,
+  buildReportExecutionRows,
   downloadQaExcel,
+  groupExecutionRowsBySection,
+  normalizeScreenshotArchiveMode,
+  parsePlannedTestCases,
   renderEvidenceHtml,
-  renderObservationsHtml,
-  renderQaTableHtml,
+  renderExecutionSectionHtml,
+  renderExecutionTableHtml,
+  sessionDurationLabel,
+  summarizeExecutionRows,
+  agentStepHasError,
+  type ScreenshotArchiveMode,
 } from './qaReport'
+
+/** Fixed branding for every exported Test Execution Report. */
+export const REPORT_PROJECT = 'AI Assistant'
+export const REPORT_DOCUMENT_TITLE = 'AI Assistant Test Execution Report'
 
 export type ReportStep = {
   step: number
   url?: string
   pageTitle?: string
   thought?: string
+  evidenceText?: string
   actions: string[]
   details: string[]
   screenshotPath?: string
   /** data:image/... for offline HTML / print PDF */
   screenshotDataUrl?: string
+  createdAt?: string
 }
 
 function escapeHtml(s: string): string {
@@ -67,7 +82,7 @@ type StepEventLike = {
 }
 
 /** Build report steps from session events (screenshots resolved separately). */
-export function eventsToReportSteps(events: StepEventLike[], limit = 50): ReportStep[] {
+export function eventsToReportSteps(events: StepEventLike[], limit = 200): ReportStep[] {
   const steps = (events || []).filter((e) => e.type === 'step')
   const out: ReportStep[] = []
   for (let i = 0; i < steps.length && out.length < limit; i++) {
@@ -96,15 +111,27 @@ export function eventsToReportSteps(events: StepEventLike[], limit = 50): Report
     if (typeof p.screenshot_b64 === 'string' && p.screenshot_b64) {
       screenshotDataUrl = `data:image/png;base64,${p.screenshot_b64}`
     }
+    const thoughtFields =
+      p.thought_fields && typeof p.thought_fields === 'object'
+        ? (p.thought_fields as Record<string, unknown>)
+        : {}
+    const fieldBlob = Object.entries(thoughtFields)
+      .filter(([, v]) => typeof v === 'string' && String(v).trim())
+      .map(([k, v]) => `${k}: ${String(v)}`)
+      .join('\n')
+    const fullThought = typeof p.thought === 'string' ? p.thought : ''
+    const evidenceText = [fullThought, fieldBlob, ...actions].filter(Boolean).join('\n')
     out.push({
       step: stepNo,
       url: p.url ? String(p.url) : undefined,
       pageTitle: p.title ? String(p.title) : undefined,
       thought: thoughtSummary(p) || undefined,
+      evidenceText: evidenceText || undefined,
       actions: actions.map(humanizeAction),
       details,
       screenshotPath: shot,
       screenshotDataUrl,
+      createdAt: e.created_at ? String(e.created_at) : undefined,
     })
   }
   return out
@@ -124,7 +151,15 @@ export async function embedStepScreenshots(
   sessionId: string,
   steps: ReportStep[],
   screenshotUrl: (sessionId: string, rel: string) => string,
+  archiveMode: ScreenshotArchiveMode = 'on_failure',
 ): Promise<ReportStep[]> {
+  if (archiveMode === 'never') {
+    return steps.map((s) => ({
+      ...s,
+      screenshotDataUrl: undefined,
+      screenshotPath: undefined,
+    }))
+  }
   const results: ReportStep[] = []
   for (const step of steps) {
     if (step.screenshotDataUrl || !step.screenshotPath) {
@@ -144,7 +179,67 @@ export async function embedStepScreenshots(
       results.push(step)
     }
   }
-  return results
+  if (archiveMode !== 'on_failure') return results
+  const need = results.some((s) => agentStepHasError(s) && !s.screenshotDataUrl)
+  if (!need) return results
+  let latestDataUrl: string | undefined
+  try {
+    const res = await fetch(screenshotUrl(sessionId, 'screenshots/latest.png'))
+    if (res.ok) latestDataUrl = await blobToDataUrl(await res.blob())
+  } catch {
+    /* ignore */
+  }
+  if (!latestDataUrl) return results
+  return results.map((s) =>
+    agentStepHasError(s) && !s.screenshotDataUrl
+      ? {
+          ...s,
+          screenshotPath: s.screenshotPath || 'screenshots/latest.png',
+          screenshotDataUrl: latestDataUrl,
+        }
+      : s,
+  )
+}
+
+const HTML_OMIT_NOTE =
+  '**Embedded HTML report source omitted from this export.** Open the `.html` artifact in Artifacts, or use the structured sections below.'
+
+/** Strip pasted HTML documents so exports do not dump raw source. */
+export function sanitizeExportContent(content: string): string {
+  let text = (content || '').replace(/\r\n/g, '\n')
+  let stripped = false
+  text = text.replace(/```(?:html?|HTML?)\s*\n[\s\S]*?```/g, () => {
+    stripped = true
+    return ''
+  })
+  text = text.replace(/<!DOCTYPE\s+html\b[\s\S]*?<\/html\s*>/gi, () => {
+    stripped = true
+    return ''
+  })
+  text = text.replace(/<html\b[\s\S]*?<\/html\s*>/gi, () => {
+    stripped = true
+    return ''
+  })
+  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, () => {
+    stripped = true
+    return ''
+  })
+  text = text.replace(
+    /(^|\n)\s*Attachments?\s*:\s*(?:\n\s*[^\n]+\.html?\s*:?\s*)+/gi,
+    (_m, lead: string) => {
+      stripped = true
+      return `${lead}`
+    },
+  )
+  text = text.replace(/(^|\n)\s*[^\n]+\.html?\s*:\s*(?=\n|$)/gi, (_m, lead: string) => {
+    stripped = true
+    return `${lead}`
+  })
+  text = text.replace(/\n{3,}/g, '\n\n').trim()
+  if (stripped) {
+    text = text ? `${text}\n\n${HTML_OMIT_NOTE}` : HTML_OMIT_NOTE
+  }
+  return text
 }
 
 function stepsToHtml(steps: ReportStep[]): string {
@@ -191,15 +286,15 @@ function stepsToHtml(steps: ReportStep[]): string {
 
 /** Light markdown → HTML for exports (bold, links, lists, pipes tables). */
 export function contentToHtmlBody(content: string): string {
-  const text = (content || '').replace(/\r\n/g, '\n').trim()
+  const text = sanitizeExportContent(content || '').replace(/\r\n/g, '\n').trim()
   if (!text) return '<p></p>'
 
   const lines = text.split('\n')
   const parts: string[] = []
   let i = 0
 
-  const inline = (line: string) =>
-    escapeHtml(line)
+  const inline = (line: string) => {
+    let html = escapeHtml(line)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(
@@ -207,35 +302,55 @@ export function contentToHtmlBody(content: string): string {
         '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
       )
       .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>')
+    // Status badges for table cells / prose
+    html = html
+      .replace(
+        /(?:✅\s*)?\bPASS\b/gi,
+        '<span class="status-badge status-pass">PASS</span>',
+      )
+      .replace(
+        /(?:❌\s*)?\bFAIL\b/gi,
+        '<span class="status-badge status-fail">FAIL</span>',
+      )
+      .replace(
+        /\bBLOCKED\b/gi,
+        '<span class="status-badge status-blocked">BLOCKED</span>',
+      )
+    return html
+  }
+
+  const isPipeRow = (line: string) => /^\s*\|.+\|\s*$/.test(line)
+  const isSepRow = (line: string) => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(line)
+  const splitPipeRow = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((c) => c.trim())
 
   while (i < lines.length) {
     const line = lines[i]
-    if (/^\s*\|.+\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-/.test(lines[i + 1])) {
+    // Markdown pipe table (separator optional — agents often omit it)
+    if (isPipeRow(line)) {
       const rows: string[][] = []
-      while (i < lines.length && /^\s*\|/.test(lines[i])) {
-        if (!/^\s*\|?\s*:?-/.test(lines[i])) {
-          rows.push(
-            lines[i]
-              .trim()
-              .replace(/^\|/, '')
-              .replace(/\|$/, '')
-              .split('|')
-              .map((c) => c.trim()),
-          )
-        }
+      while (i < lines.length && (isPipeRow(lines[i]) || isSepRow(lines[i]))) {
+        if (!isSepRow(lines[i])) rows.push(splitPipeRow(lines[i]))
         i++
       }
       if (rows.length) {
         const [head, ...body] = rows
-        parts.push('<table><thead><tr>')
+        parts.push('<div class="md-table-wrap"><table class="md-table"><thead><tr>')
         for (const h of head) parts.push(`<th>${inline(h)}</th>`)
         parts.push('</tr></thead><tbody>')
         for (const row of body) {
           parts.push('<tr>')
-          for (const c of row) parts.push(`<td>${inline(c)}</td>`)
+          for (let c = 0; c < head.length; c++) {
+            parts.push(`<td>${inline(row[c] || '')}</td>`)
+          }
           parts.push('</tr>')
         }
-        parts.push('</tbody></table>')
+        parts.push('</tbody></table></div>')
       }
       continue
     }
@@ -245,6 +360,38 @@ export function contentToHtmlBody(content: string): string {
       const level = heading[1].length
       parts.push(`<h${level}>${inline(heading[2])}</h${level}>`)
       i++
+      continue
+    }
+
+    // Bare "Test Execution Summary" / requirement lines → promote to table when
+    // we see a header-like line followed by PASS/FAIL rows (no pipes).
+    if (
+      /^\s*(Requirement|TC ID|Test Scenario)\b/i.test(line) &&
+      /\bStatus\b/i.test(line) &&
+      i + 1 < lines.length &&
+      /\b(PASS|FAIL|BLOCKED)\b/i.test(lines[i + 1] || '')
+    ) {
+      const headerCells = line.trim().split(/\s{2,}|\t+/).filter(Boolean)
+      const bodyRows: string[][] = []
+      i++
+      while (i < lines.length && /\b(PASS|FAIL|BLOCKED|N\/A)\b/i.test(lines[i])) {
+        const cells = lines[i].trim().split(/\s{2,}|\t+/).filter(Boolean)
+        if (cells.length >= 2) bodyRows.push(cells)
+        i++
+      }
+      if (headerCells.length && bodyRows.length) {
+        parts.push('<div class="md-table-wrap"><table class="md-table"><thead><tr>')
+        for (const h of headerCells) parts.push(`<th>${inline(h)}</th>`)
+        parts.push('</tr></thead><tbody>')
+        for (const row of bodyRows) {
+          parts.push('<tr>')
+          for (let c = 0; c < headerCells.length; c++) {
+            parts.push(`<td>${inline(row[c] || '')}</td>`)
+          }
+          parts.push('</tr>')
+        }
+        parts.push('</tbody></table></div>')
+      }
       continue
     }
 
@@ -310,7 +457,10 @@ export type ReportMeta = {
   username?: string
   prompt?: string
   timestamp?: string
+  /** Optional overall run duration label (e.g. "4m 12s"); computed from steps when omitted */
+  duration?: string
   steps?: ReportStep[]
+  screenshotArchive?: ScreenshotArchiveMode
 }
 
 export function buildHtmlDocument(
@@ -319,218 +469,317 @@ export function buildHtmlDocument(
 ): string {
   const meta: ReportMeta =
     typeof titleOrMeta === 'string' ? { title: titleOrMeta } : titleOrMeta || {}
-  const title = (meta.title || 'AgentBrowser report').trim() || 'AgentBrowser report'
-  const username = (meta.username || '').trim() || 'Unknown'
+  // Always brand as AI Assistant Test Execution Report
+  const project = REPORT_PROJECT
+  const documentTitle = REPORT_DOCUMENT_TITLE
   const prompt = (meta.prompt || '').trim() || '—'
   const timestamp = (meta.timestamp || new Date().toLocaleString()).trim()
+  const rawUser = (meta.username || '').trim()
+  const tester = rawUser && rawUser !== 'Unknown' ? rawUser : 'Automated QA'
+  const archiveMode = normalizeScreenshotArchiveMode(meta.screenshotArchive)
   const body = contentToHtmlBody(content)
   const steps = meta.steps || []
-  const qaRows = buildAgentQaRows(steps, { startUrl: steps[0]?.url, taskTheme: title })
+  // User-pasted TC plan (prompt) wins over assistant echo; fall back to content
+  const planText = [prompt !== '—' ? prompt : '', content || ''].filter(Boolean).join('\n\n')
+  const { rows: execRows, fromPlan } = buildReportExecutionRows(steps, {
+    startUrl: steps[0]?.url,
+    taskTheme: project,
+    planText,
+  })
+  const counts = summarizeExecutionRows(execRows)
+  const targetUrl = steps.find((s) => s.url)?.url || ''
   const { observations, recommendations } = buildAgentObservations(steps)
-  const qaTableHtml = renderQaTableHtml(qaRows)
-  const observationsHtml = renderObservationsHtml(observations, recommendations)
-  const evidenceHtml = renderEvidenceHtml(steps)
-  const brandIcon = `<svg class="ab-icon" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="4" width="28" height="22" rx="4" fill="#FF7A1A"/>
-      <rect x="6" y="8" width="20" height="12" rx="2" fill="#FFF7ED"/>
-      <circle cx="11" cy="14" r="1.6" fill="#FF7A1A"/>
-      <circle cx="16" cy="14" r="1.6" fill="#FF7A1A"/>
-      <circle cx="21" cy="14" r="1.6" fill="#FF7A1A"/>
-      <path d="M12 26h8v2a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2z" fill="#E96A0D"/>
-    </svg>`
+  const criticalIssues = buildCriticalIssues(execRows)
+  const shotsHtml = renderEvidenceHtml(steps, archiveMode)
+  const runDuration = (meta.duration || '').trim() || sessionDurationLabel(steps)
+
+  // Prefer plan sections (1. General Questions); else hostname groups
+  let groups = groupExecutionRowsBySection(execRows)
+  if (!fromPlan) {
+    groups = new Map()
+    {
+      let n = 0
+      for (const step of steps) {
+        const hasActions = (step.actions || []).length > 0
+        const hasShot = Boolean(step.screenshotPath || step.screenshotDataUrl)
+        if (!hasActions && !hasShot) continue
+        n += 1
+        let feature = 'Browser Session'
+        if (step.url) {
+          try {
+            feature = new URL(step.url).hostname || feature
+          } catch {
+            /* ignore */
+          }
+        }
+        const row = execRows[n - 1]
+        if (!row) continue
+        const list = groups.get(feature) || []
+        list.push(row)
+        groups.set(feature, list)
+      }
+    }
+    if (groups.size === 0 && execRows.length) {
+      groups.set('Browser Session', execRows)
+    }
+  }
+
+  let sectionIdx = 0
+  const detailedSections = [...groups.entries()]
+    .map(([feature, rows]) => {
+      sectionIdx += 1
+      // Section titles from plan already include "1. General Questions" — avoid double numbering
+      const label = fromPlan && /^\d+\./.test(feature) ? feature : feature
+      const idx = fromPlan && /^\d+\./.test(feature) ? 0 : sectionIdx
+      if (idx === 0) {
+        const first = rows[0]?.['TC ID'] || ''
+        const last = rows[rows.length - 1]?.['TC ID'] || first
+        const range = first && last ? ` (${first} to ${last})` : ''
+        const passed = rows.filter((r) => r.Status === 'PASS').length
+        return `<h2>${escapeHtml(label)}${escapeHtml(range)}</h2>
+  ${renderExecutionTableHtml(rows)}
+  <p class="section-result"><strong>Section Result:</strong> ${passed}/${rows.length} Passed</p>`
+      }
+      return renderExecutionSectionHtml(sectionIdx, feature, rows)
+    })
+    .join('\n')
+
+  // recount sectionIdx for closing section numbers when plan used pre-numbered headings
+  if (fromPlan) sectionIdx = groups.size
+
+  const shotSectionIdx = sectionIdx + 1
+  const criticalIdx = shotSectionIdx + 1
+  const recIdx = criticalIdx + 1
+  const conclusionIdx = recIdx + 1
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(documentTitle)}</title>
   <style>
-    :root { color-scheme: light; }
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap');
+    :root {
+      --green: #006633;
+      --text: #222222;
+      --border: #c8c8c8;
+      --rule: #dddddd;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      line-height: 1.55;
-      max-width: 860px;
+      font-family: "Noto Sans", "DejaVu Sans", Arial, Helvetica, sans-serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      max-width: 780px;
       margin: 0 auto;
-      padding: 28px 24px 64px;
-      color: #1f2937;
+      padding: 32px 36px 48px;
+      color: var(--text);
       background: #fff;
     }
-    h1 { font-size: 1.35rem; margin: 0 0 0.75rem; color: #111827; }
-    h2 { font-size: 1.15rem; margin: 1.75rem 0 0.5rem; color: #111827; border-bottom: 2px solid #fed7aa; padding-bottom: 0.35rem; }
-    p { margin: 0 0 0.85rem; }
-    ol, ul { margin: 0 0 1rem; padding-left: 1.35rem; }
-    li { margin: 0.35rem 0; }
-    .report-body table { width: 100%; border-collapse: collapse; margin: 0.75rem 0 1.25rem; font-size: 0.85rem; }
-    .report-body th, .report-body td { border: 1px solid #e5e7eb; padding: 6px 8px; vertical-align: top; text-align: left; }
-    .report-body th { background: #fff7ed; font-size: 0.72rem; text-transform: uppercase; color: #9a3412; }
-    .qa-table-wrap { width: 100%; overflow-x: auto; margin: 0.75rem 0 1.25rem; }
-    .qa-table {
-      table-layout: fixed;
+    h1 {
+      font-size: 22pt;
+      font-weight: 700;
+      color: var(--green);
+      margin: 0 0 16px;
+      line-height: 1.25;
+      text-align: center;
+    }
+    h2 {
+      font-size: 13pt;
+      font-weight: 700;
+      color: var(--green);
+      margin: 20px 0 8px;
+    }
+    p { margin: 0 0 10px; }
+    ul, ol { margin: 0 0 12px; padding-left: 1.4rem; }
+    li { margin: 4px 0; }
+    .field-table, .exec-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.72rem;
-      line-height: 1.35;
+      margin: 0 0 12px;
+      font-size: 10.5pt;
     }
-    .qa-table th, .qa-table td {
-      border: 1px solid #d1d5db;
-      padding: 5px 6px;
+    .field-table th, .field-table td,
+    .exec-table th, .exec-table td {
+      border: 1px solid var(--border);
+      padding: 7px 9px;
+      text-align: left;
       vertical-align: top;
+    }
+    .field-table thead th,
+    .exec-table thead th {
+      background: var(--green);
+      color: #fff;
+      font-weight: 700;
+    }
+    .field-table thead th { width: 50%; }
+    .field-table tbody th {
+      width: 38%;
+      font-weight: 400;
+      background: #fff;
+      color: var(--text);
+    }
+    .exec-table { font-size: 10pt; table-layout: fixed; }
+    .exec-table col.tc { width: 10%; }
+    .exec-table col.scenario { width: 24%; }
+    .exec-table col.status { width: 10%; }
+    .exec-table col.duration { width: 10%; }
+    .exec-table col.notes { width: 46%; }
+    .exec-table td.cell-wrap {
+      white-space: normal;
       word-break: break-word;
       overflow-wrap: anywhere;
+      line-height: 1.4;
     }
-    .qa-table th {
-      background: #fff7ed;
-      color: #9a3412;
-      font-size: 0.65rem;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      white-space: nowrap;
+    .exec-table td.status-cell { text-align: left; white-space: nowrap; }
+    .exec-table td.duration-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .status-pass { color: var(--text); font-weight: 700; }
+    .status-fail { color: #990000; font-weight: 700; }
+    .status-blocked, .status-na { color: var(--text); font-weight: 700; }
+    .section-result { margin: 0 0 16px; font-size: 10.5pt; }
+    .qa-evidence-grid { display: grid; gap: 12px; margin: 8px 0 16px; }
+    .qa-evidence img {
+      max-width: 100%;
+      border: 1px solid var(--border);
+      background: #111;
     }
-    .qa-table tbody tr:nth-child(even) td { background: #fafafa; }
-    .qa-obs h3 { font-size: 0.95rem; margin: 0.75rem 0 0.35rem; border: none; }
-    .qa-evidence-grid { display: grid; gap: 12px; }
-    .qa-evidence img { max-width: 100%; border: 1px solid #fed7aa; border-radius: 6px; }
-    .qa-evidence figcaption { font-size: 0.8rem; color: #6b7280; margin-top: 4px; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 4px; }
-    a { color: #2563eb; }
-    .muted { color: #6b7280; font-size: 0.9rem; }
-    .ab-icon { width: 28px; height: 28px; display: block; flex-shrink: 0; }
-    .ab-icon-sm { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; }
-    .report-header {
-      margin: 0 0 1.5rem;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid #fdba74;
-      box-shadow: 0 1px 2px rgba(255, 122, 26, 0.08);
-    }
-    .report-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      background: linear-gradient(135deg, #FF7A1A 0%, #E96A0D 100%);
-      color: #fff;
-    }
-    .report-brand .brand-text { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.01em; }
-    .report-brand .brand-sub { font-size: 0.75rem; opacity: 0.9; font-weight: 500; }
-    .meta-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 0.9rem; background: #fff; }
-    .meta-table th, .meta-table td {
-      border: none; border-top: 1px solid #fed7aa; padding: 10px 12px; text-align: left; vertical-align: top;
-    }
-    .meta-table th {
-      width: 118px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;
-    }
-    .meta-table td { color: #111827; white-space: pre-wrap; word-break: break-word; }
-    .meta-table tr.row-title th { background: #fff7ed; color: #c2410c; }
-    .meta-table tr.row-title td { background: #fffbeb; font-weight: 600; font-size: 0.98rem; }
-    .meta-table tr.row-user th { background: #eff6ff; color: #1d4ed8; }
-    .meta-table tr.row-user td { background: #f8fafc; }
-    .meta-table tr.row-prompt th { background: #ecfdf5; color: #047857; }
-    .meta-table tr.row-prompt td { background: #f8fafc; }
-    .meta-table tr.row-time th { background: #f1f5f9; color: #334155; }
-    .meta-table tr.row-time td { background: #fafafa; color: #374151; }
-    .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
-    .chip-user { background: #dbeafe; color: #1e40af; }
-    .chip-time { background: #e2e8f0; color: #334155; }
-    .steps-section { margin-top: 1.5rem; }
-    .steps-intro { color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem; }
-    .step-card {
-      border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin: 0 0 1.1rem;
-      background: #fafafa; break-inside: avoid; page-break-inside: avoid;
-    }
-    .step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 0.75rem; }
-    .step-badge {
-      display: inline-block; background: #FF7A1A; color: #fff; font-size: 0.75rem; font-weight: 700;
-      padding: 3px 10px; border-radius: 999px; letter-spacing: 0.02em;
-    }
-    .step-url { font-size: 0.8rem; color: #4b5563; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
-    .step-block { margin: 0.65rem 0; }
-    .step-block > strong {
-      display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.35rem;
-    }
-    .step-actions, .step-details { margin: 0.25rem 0 0; padding-left: 1.2rem; font-size: 0.92rem; }
-    .step-thought {
-      background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 0.5rem 0 0.75rem;
-    }
-    .step-thought strong { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #c2410c; }
-    .step-thought p { margin: 0.35rem 0 0; font-size: 0.92rem; color: #374151; }
-    .step-shot { margin: 0.5rem 0 0; }
-    .step-shot img {
-      display: block; width: 100%; max-height: 420px; object-fit: contain; background: #111827;
-      border: 1px solid #d1d5db; border-radius: 8px;
-    }
-    .step-shot figcaption { margin-top: 0.4rem; font-size: 0.78rem; color: #6b7280; }
+    .qa-evidence figcaption { font-size: 9pt; color: #555; margin-top: 4px; }
+    .muted { color: #666; font-size: 10pt; }
+    .critical-issue { margin: 0 0 12px; }
+    .critical-issue ul { margin: 4px 0 0; }
+    .end-mark { margin: 22px 0 8px; text-align: center; }
     .report-footer {
-      margin-top: 2.5rem; padding-top: 0.85rem; border-top: 1px solid #fed7aa; text-align: center;
-      color: #9a3412; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em;
+      margin-top: 16px;
+      padding-top: 10px;
+      border-top: 1px solid var(--rule);
+      text-align: center;
+      font-size: 9pt;
+      color: #555;
     }
-    .report-footer .ab-icon { display: inline-block; }
+    .session-notes { margin: 12px 0 16px; font-size: 10pt; color: #444; }
+    .session-notes .md-table-wrap { overflow-x: auto; margin: 10px 0; }
+    .session-notes table.md-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10pt;
+    }
+    .session-notes table.md-table th,
+    .session-notes table.md-table td {
+      border: 1px solid var(--border);
+      padding: 7px 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .session-notes table.md-table th {
+      background: var(--green);
+      color: #fff;
+      font-weight: 700;
+    }
+    .session-notes .status-badge { font-weight: 700; }
+    .session-notes .status-pass { color: #006633; }
+    .session-notes .status-fail { color: #990000; }
+    code { font-family: "DejaVu Sans Mono", Consolas, monospace; font-size: 0.92em; }
     @media print {
-      @page { size: landscape; margin: 8mm 8mm 12mm; }
-      body { padding: 0 0 24px; max-width: none; font-size: 10pt; }
-      a { color: inherit; text-decoration: none; }
-      .report-header { break-inside: avoid; box-shadow: none; }
-      .qa-table-wrap { overflow: visible; }
-      .qa-table { font-size: 7.5pt; }
-      .qa-table th, .qa-table td { padding: 3px 4px; }
-      .qa-table thead { display: table-header-group; }
-      .qa-table tr { break-inside: avoid; page-break-inside: avoid; }
-      .step-card { break-inside: avoid; page-break-inside: avoid; background: #fff; }
-      .step-shot img { max-height: 280px; }
-      .qa-evidence { break-inside: avoid; page-break-inside: avoid; }
-      .report-footer {
-        position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 4px 0 0;
-        border-top: 1px solid #fdba74; background: #fff;
-      }
+      @page { size: A4; margin: 14mm; }
+      body { padding: 0; max-width: none; }
+      .qa-evidence { break-inside: avoid; }
+      h2 { break-after: avoid; }
     }
   </style>
 </head>
 <body>
-  <header class="report-header">
-    <div class="report-brand">
-      ${brandIcon}
-      <div>
-        <div class="brand-text">AgentBrowser</div>
-        <div class="brand-sub">Session report</div>
-      </div>
-    </div>
-    <table class="meta-table" role="presentation">
-      <tbody>
-        <tr class="row-title">
-          <th scope="row">Title</th>
-          <td>${escapeHtml(title)}</td>
-        </tr>
-        <tr class="row-user">
-          <th scope="row">User</th>
-          <td><span class="chip chip-user">${escapeHtml(username)}</span></td>
-        </tr>
-        <tr class="row-prompt">
-          <th scope="row">Prompt</th>
-          <td>${escapeHtml(prompt)}</td>
-        </tr>
-        <tr class="row-time">
-          <th scope="row">Timestamp</th>
-          <td><span class="chip chip-time">${escapeHtml(timestamp)}</span></td>
-        </tr>
-      </tbody>
-    </table>
-  </header>
-  <main class="report-body">
-  <h2>Executive Summary</h2>
-  ${body}
-  <h2>Test Cases</h2>
-  ${qaTableHtml}
-  <h2>Observations & Recommendations</h2>
-  ${observationsHtml}
-  ${evidenceHtml}
-  </main>
+  <h1>${escapeHtml(documentTitle)}</h1>
+
+  <h2>Document Information</h2>
+  <table class="field-table">
+    <thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Project</th><td>${escapeHtml(project)}</td></tr>
+      <tr><th scope="row">Version</th><td>1.0</td></tr>
+      <tr><th scope="row">Report Date</th><td>${escapeHtml(timestamp)}</td></tr>
+      <tr><th scope="row">Tester</th><td>${escapeHtml(tester)}</td></tr>
+      <tr><th scope="row">Duration</th><td>${escapeHtml(runDuration)}</td></tr>
+      <tr><th scope="row">Total Test Cases</th><td>${counts.total}</td></tr>
+      <tr><th scope="row">Passed</th><td>${counts.passed}</td></tr>
+      <tr><th scope="row">Failed</th><td>${counts.failed}</td></tr>
+      <tr><th scope="row">Blocked / Not Tested</th><td>${counts.blocked}</td></tr>
+      <tr><th scope="row">Partial / N/A</th><td>${counts.partial}</td></tr>
+    </tbody>
+  </table>
+
+  ${
+    prompt !== '—' || targetUrl
+      ? `<p class="session-notes"><strong>Target:</strong> ${escapeHtml(targetUrl || 'N/A')}
+         &nbsp;·&nbsp; <strong>Prompt:</strong> ${escapeHtml(prompt)}
+         &nbsp;·&nbsp; <strong>Screenshot archive:</strong> ${
+           archiveMode === 'always' ? 'Always' : archiveMode === 'never' ? 'Never' : 'On failure only'
+         }</p>`
+      : ''
+  }
+  ${body ? `<div class="session-notes">${body}</div>` : ''}
+
+  ${detailedSections || renderExecutionTableHtml(execRows)}
+
+  <h2>${shotSectionIdx}. Screenshot Evidence</h2>
+  ${shotsHtml}
+
+  <h2>${criticalIdx}. Critical Issues Found</h2>
+  ${
+    criticalIssues.length === 0
+      ? `<p>No critical issues recorded for this session.</p>`
+      : criticalIssues
+          .map(
+            (issue, i) => `<div class="critical-issue">
+  <p><strong>${i + 1}. ${escapeHtml(issue.tcId)}: ${escapeHtml(issue.title)}</strong></p>
+  <ul>
+    <li><strong>Severity:</strong> ${escapeHtml(issue.severity)}</li>
+    <li><strong>Error:</strong> ${escapeHtml(issue.error)}</li>
+    <li><strong>Impact:</strong> ${escapeHtml(issue.impact)}</li>
+    <li><strong>Recommendation:</strong> ${escapeHtml(issue.recommendation)}</li>
+  </ul>
+</div>`,
+          )
+          .join('\n')
+  }
+
+  <h2>${recIdx}. Recommendations</h2>
+  <ol>
+    ${(recommendations.length
+      ? recommendations
+      : ['Re-run after UI or flow changes; keep key paths covered.']
+    )
+      .map((x) => `<li>${escapeHtml(x)}</li>`)
+      .join('')}
+  </ol>
+
+  <h2>${conclusionIdx}. Conclusion</h2>
+  <p>${counts.passed} passed, ${counts.failed} failed, ${counts.blocked} blocked / not tested
+    (${counts.total} total). Run duration: ${escapeHtml(runDuration)}.
+    ${counts.total === 0 ? 'No browser test cases were executed in this session.' : ''}</p>
+  <p><strong>Overall Assessment:</strong>
+    ${
+      counts.verdict === 'PASS'
+        ? 'Core exercised paths passed in this session. Re-run after material UI or environment changes.'
+        : counts.verdict === 'FAIL'
+          ? 'One or more exercised paths failed. Resolve critical issues above before treating this run as production-ready.'
+          : 'No executable browser cases were available to assess in this session.'
+    }
+  </p>
+  ${
+    observations.length
+      ? `<p class="muted"><strong>Additional notes:</strong> ${escapeHtml(observations.join(' · '))}</p>`
+      : ''
+  }
+
+  <p class="end-mark"><strong>End of Report</strong></p>
   <footer class="report-footer">
-    ${brandIcon.replace('class="ab-icon"', 'class="ab-icon ab-icon-sm"')}
-    AgentBrowser
+    Report generated by AgentBrowser as part of functional test execution protocol.
   </footer>
 </body>
 </html>`
 }
+
 
 export function slugTitle(title: string): string {
   const s = (title || 'report')
@@ -587,7 +836,7 @@ export function buildReportPreviewPayload(
   content: string,
   meta: ReportMeta,
 ): ReportPreviewPayload {
-  const title = (meta.title || 'AgentBrowser report').trim() || 'AgentBrowser report'
+  const title = REPORT_DOCUMENT_TITLE
   return {
     html: buildHtmlDocument(content, { ...meta, title }),
     title,
@@ -597,9 +846,7 @@ export function buildReportPreviewPayload(
 }
 
 export function downloadHtml(content: string, titleOrMeta: string | ReportMeta) {
-  const title =
-    typeof titleOrMeta === 'string' ? titleOrMeta : titleOrMeta.title || 'AgentBrowser report'
-  const name = `${slugTitle(title)}.html`
+  const name = `${slugTitle(REPORT_DOCUMENT_TITLE)}.html`
   downloadTextFile(name, buildHtmlDocument(content, titleOrMeta), 'text/html;charset=utf-8')
 }
 
@@ -607,9 +854,38 @@ export function downloadHtml(content: string, titleOrMeta: string | ReportMeta) 
 export function downloadExcel(content: string, titleOrMeta: string | ReportMeta) {
   const meta: ReportMeta =
     typeof titleOrMeta === 'string' ? { title: titleOrMeta } : titleOrMeta || {}
-  const title = (meta.title || 'AgentBrowser report').trim() || 'AgentBrowser report'
+  const title = REPORT_DOCUMENT_TITLE
   const steps = meta.steps || []
-  const rows = buildAgentQaRows(steps, { startUrl: steps[0]?.url, taskTheme: title })
+  const planText = [(meta.prompt || '').trim(), content || ''].filter(Boolean).join('\n\n')
+  const plan = parsePlannedTestCases(planText)
+  if (plan.length) {
+    const { rows: execRows } = buildReportExecutionRows(steps, { planText })
+    const byId = new Map(execRows.map((r) => [r['TC ID'], r]))
+    const rows = plan.map((p) => {
+      const ex = byId.get(p['TC ID'])
+      const actual =
+        ex?.Status === 'PASS'
+          ? `Pass — ${ex['Evidence / Notes']}`
+          : ex?.Status === 'FAIL'
+            ? `Fail — ${ex['Evidence / Notes']}`
+            : ex?.Status === 'BLOCKED'
+              ? `Blocked — ${ex['Evidence / Notes']}`
+              : 'Not executed'
+      return {
+        'TC ID': p['TC ID'],
+        Feature: p.Feature,
+        'Test Scenario': p['Test Scenario'],
+        Preconditions: p.Preconditions,
+        'Test Steps': p['Test Steps'],
+        'Expected Result': p['Expected Result'],
+        'Actual Result': actual,
+        Priority: p.Priority,
+      }
+    })
+    downloadQaExcel(rows, slugTitle(title))
+    return
+  }
+  const rows = buildAgentQaRows(steps, { startUrl: steps[0]?.url, taskTheme: REPORT_PROJECT })
   downloadQaExcel(rows, slugTitle(title))
 }
 

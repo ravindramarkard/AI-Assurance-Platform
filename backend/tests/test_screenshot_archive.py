@@ -1,8 +1,11 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from app.screenshot_archive import (
     apply_headless_archive_default,
     archive_decision,
+    collect_failed_screenshot_files,
     normalize_screenshot_archive,
     resolve_screenshot_archive,
     should_archive_step_screenshot,
@@ -54,6 +57,132 @@ class TestScreenshotArchive(unittest.TestCase):
         self.assertFalse(archive_decision("on_failure", failed=False, has_b64=True))
         self.assertTrue(archive_decision("on_failure", failed=True, has_b64=True))
         self.assertFalse(archive_decision("never", failed=True, has_b64=True))
+
+
+class TestCollectFailedScreenshots(unittest.TestCase):
+    def test_collects_last_failed_pngs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shots = root / "screenshots"
+            shots.mkdir()
+            for name in ("step_0001.png", "step_0002.png", "step_0003.png"):
+                (shots / name).write_bytes(b"\x89PNG")
+            events = [
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["Click ok"],
+                        "thought": "ok",
+                        "screenshot": "screenshots/step_0001.png",
+                    },
+                },
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["error: a"],
+                        "thought": "Failed.",
+                        "screenshot": "screenshots/step_0002.png",
+                    },
+                },
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["error: b"],
+                        "thought": "Failed.",
+                        "screenshot": "screenshots/step_0003.png",
+                    },
+                },
+            ]
+            got = collect_failed_screenshot_files(events, root, max_files=5)
+            self.assertEqual([p.name for p in got], ["step_0002.png", "step_0003.png"])
+
+    def test_caps_to_last_five(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shots = root / "screenshots"
+            shots.mkdir()
+            events = []
+            for i in range(1, 8):
+                name = f"step_{i:04d}.png"
+                (shots / name).write_bytes(b"x")
+                events.append(
+                    {
+                        "type": "step",
+                        "payload": {
+                            "actions": ["error: x"],
+                            "thought": "Failed.",
+                            "screenshot": f"screenshots/{name}",
+                        },
+                    }
+                )
+            got = collect_failed_screenshot_files(events, root, max_files=5)
+            self.assertEqual(len(got), 5)
+            self.assertEqual(got[0].name, "step_0003.png")
+            self.assertEqual(got[-1].name, "step_0007.png")
+
+    def test_max_files_six_still_caps_at_five(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shots = root / "screenshots"
+            shots.mkdir()
+            events = []
+            for i in range(1, 8):
+                name = f"step_{i:04d}.png"
+                (shots / name).write_bytes(b"x")
+                events.append(
+                    {
+                        "type": "step",
+                        "payload": {
+                            "actions": ["error: x"],
+                            "thought": "Failed.",
+                            "screenshot": f"screenshots/{name}",
+                        },
+                    }
+                )
+            got = collect_failed_screenshot_files(events, root, max_files=6)
+            self.assertEqual(len(got), 5)
+
+    def test_max_files_zero_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shots = root / "screenshots"
+            shots.mkdir()
+            (shots / "step_0001.png").write_bytes(b"x")
+            events = [
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["error: x"],
+                        "thought": "Failed.",
+                        "screenshot": "screenshots/step_0001.png",
+                    },
+                },
+            ]
+            self.assertEqual(collect_failed_screenshot_files(events, root, max_files=0), [])
+
+    def test_skips_missing_and_latest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "screenshots").mkdir()
+            events = [
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["error: x"],
+                        "thought": "Failed.",
+                        "screenshot": "screenshots/latest.png",
+                    },
+                },
+                {
+                    "type": "step",
+                    "payload": {
+                        "actions": ["error: y"],
+                        "thought": "Failed.",
+                        "screenshot": "screenshots/missing.png",
+                    },
+                },
+            ]
+            self.assertEqual(collect_failed_screenshot_files(events, root), [])
 
 
 if __name__ == "__main__":

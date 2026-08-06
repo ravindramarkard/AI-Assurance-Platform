@@ -53,6 +53,8 @@ type ToolCall = {
   title: string
   code: string
   outputLines: string[]
+  /** Full done()/report body — render as markdown like browser-use Output */
+  outputMarkdown?: string
   filePath?: string
 }
 
@@ -225,13 +227,17 @@ function actionToCode(action: string): string {
         `)`,
       ].join('\n')
     }
-    case 'done':
+    case 'done': {
+      const full = unescapeActionText(p.text || 'Task complete')
+      // Code preview stays short; Output panel shows the full text as-is
+      const preview = full.length > 120 ? `${full.slice(0, 117)}…` : full
       return [
         `return {`,
         `  success: ${p.success ?? 'true'},`,
-        `  text: ${JSON.stringify(truncate(p.text || 'Task complete', 80))}`,
+        `  text: ${JSON.stringify(preview)}`,
         `}`,
       ].join('\n')
+    }
     case 'send_keys':
       return `await page.keyboard.press(${JSON.stringify(p.keys || 'Enter')})`
     case 'scroll':
@@ -243,16 +249,34 @@ function actionToCode(action: string): string {
   }
 }
 
-function actionToOutput(action: string, step: Event): string[] {
+function unescapeActionText(s: string): string {
+  return (s || '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+}
+
+function actionToOutput(action: string, step: Event): { lines: string[]; markdown?: string } {
   const name = actionName(action)
   const p = kv(action)
   const lines: string[] = []
   if (step.payload.title) lines.push(`Title: ${String(step.payload.title)}`)
   if (step.payload.url) lines.push(`URL: ${String(step.payload.url)}`)
   if (step.payload.screenshot) lines.push('(1 screenshot attached)')
-  if (name === 'done' && p.text) lines.push(truncate(p.text.replace(/\\n/g, ' '), 180))
+
+  if (name === 'done') {
+    const raw = p.text || p.data || ''
+    const full = unescapeActionText(raw).trim()
+    // Show full done text as-is (browser-use Output), not a 180-char flat line
+    if (full) {
+      return { lines, markdown: full }
+    }
+  }
   if (name === 'write_file' || name === 'append_file') {
-    lines.push(`Wrote ${p.file_name || p.filename || p.path || 'file'}`)
+    const fname = sanitizeFileLabel(p.file_name || p.filename || p.path || 'file')
+    lines.push(`Wrote ${fname}`)
   }
   if (name === 'error') lines.push(truncate(action.replace(/^error:\s*/i, ''), 200))
   if (name === 'input' || name === 'type' || name === 'fill') {
@@ -261,19 +285,44 @@ function actionToOutput(action: string, step: Event): string[] {
   if (name === 'click') lines.push(`Clicked${p.index ? ` element #${p.index}` : ''}`)
   if (name === 'wait') lines.push(`Waited ${p.seconds || 1}s`)
   if (!lines.length) lines.push('OK')
-  return lines
+  return { lines }
+}
+
+/** Reject prose / markdown fragments mistaken for filenames. */
+function sanitizeFileLabel(name: string): string {
+  const raw = (name || '').replace(/\\n/g, '\n').trim()
+  const first = raw.split(/[\n\r]/)[0]?.trim() || 'file'
+  if (first.length > 120) return `${first.slice(0, 117)}…`
+  // Drop labels that look like sentence fragments, not files
+  if (!/\.[a-z0-9]{1,8}$/i.test(first) && /[\s:]/.test(first)) return 'file'
+  if (/^(the|and|with|from|key|points|validation|structure|accuracy)\b/i.test(first)) {
+    return 'file'
+  }
+  return first
+}
+
+function isPlausibleFileName(name: string): boolean {
+  const n = sanitizeFileLabel(name)
+  if (!n || n === 'file') return false
+  if (/[\n\r]/.test(name)) return false
+  if (!/\.[a-z0-9]{1,8}$/i.test(n)) return false
+  if (n.length > 120) return false
+  return true
 }
 
 function toToolCall(action: string, step: Event): ToolCall {
   const name = actionName(action)
   const p = kv(action)
   const isFile = name.includes('file') || name === 'write_file' || name === 'append_file'
+  const out = actionToOutput(action, step)
+  const filePath = p.file_name || p.filename || p.path
   return {
     kind: isFile ? 'files' : name === 'done' ? 'other' : 'browser',
     title: humanTitle(action),
     code: actionToCode(action),
-    outputLines: actionToOutput(action, step),
-    filePath: p.file_name || p.filename || p.path,
+    outputLines: out.lines,
+    outputMarkdown: out.markdown,
+    filePath: filePath && isPlausibleFileName(filePath) ? filePath : undefined,
   }
 }
 
@@ -1037,9 +1086,12 @@ export default function ChatPanel({
             ) : (
               <div
                 key={msgKey}
-                className="max-w-3xl text-[14px] leading-[1.5] text-slate-300 whitespace-pre-wrap bg-ink-800 border border-line rounded-lg px-4 py-3"
+                className="max-w-3xl text-[14px] leading-[1.5] text-slate-300 bg-ink-800 border border-line rounded-lg px-4 py-3"
               >
-                {m.content}
+                <div
+                  className="md-preview chat-md"
+                  dangerouslySetInnerHTML={{ __html: contentToHtmlBody(m.content) }}
+                />
                 <MessageActions
                   content={m.content}
                   title={session?.title || session?.task || 'AgentBrowser report'}
@@ -1194,7 +1246,11 @@ export default function ChatPanel({
                         <span>Output</span>
                         <div className="ml-auto">
                           <CopyIconButton
-                            text={tool.outputLines.join('\n')}
+                            text={
+                              tool.outputMarkdown
+                                ? [...tool.outputLines, tool.outputMarkdown].filter(Boolean).join('\n')
+                                : tool.outputLines.join('\n')
+                            }
                             title="Copy output"
                           />
                         </div>
@@ -1205,6 +1261,14 @@ export default function ChatPanel({
                             {line}
                           </div>
                         ))}
+                        {tool.outputMarkdown ? (
+                          <div
+                            className="md-preview chat-md text-[13px] text-slate-200 mt-1"
+                            dangerouslySetInnerHTML={{
+                              __html: contentToHtmlBody(tool.outputMarkdown),
+                            }}
+                          />
+                        ) : null}
                         {shot && (
                           <a
                             href={shot}
@@ -1247,7 +1311,9 @@ export default function ChatPanel({
               {/* Wrote chips from file_written events */}
               <div className="space-y-1">
                 {item.files.map((fe, fi) => {
-                  const name = String(fe.payload.name || fe.payload.path || 'file')
+                  const rawName = String(fe.payload.name || fe.payload.path || 'file')
+                  if (!isPlausibleFileName(rawName)) return null
+                  const name = sanitizeFileLabel(rawName)
                   const path = String(fe.payload.path || name)
                   return (
                     <div key={`${blockKey}-file-${fe.id || path}-${fi}`} className="flex items-center gap-2 py-1 text-sm">
@@ -1398,14 +1464,6 @@ export default function ChatPanel({
           session.status === 'stopped' ||
           session.status === 'partial') && (
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setScheduleOpen(true)}
-              className="flex-1 min-w-[140px] text-left text-xs px-3 py-2 rounded-lg border border-line bg-ink-850 hover:border-bu-500/50 text-slate-300 flex items-center gap-2"
-            >
-              <span>⏱</span>
-              <span>{t('scheduleJob')}</span>
-            </button>
             <button
               type="button"
               onClick={clearSession}

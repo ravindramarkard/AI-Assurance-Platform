@@ -9,12 +9,14 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 
 from .. import atlassian, db
+from ..config import session_dir
 from ..llm_factory import effective_settings
 from ..models import (
     ConfluencePageRequest,
     IntegrationTestRequest,
     JiraIssueRequest,
 )
+from ..screenshot_archive import collect_failed_screenshot_files
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,46 @@ def _auth_ready(s: dict[str, str]) -> bool:
 
 def _auth_user(s: dict[str, str]) -> str:
     return _jira_auth_user(s)
+
+
+async def attach_session_failure_screenshots(
+    session_id: str,
+    issue_key: str,
+    s: dict[str, str],
+) -> dict[str, list[str]]:
+    attached: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+    try:
+        events = await db.list_events(session_id, limit=5000)
+        root = session_dir(session_id)
+        paths = collect_failed_screenshot_files(events, root, max_files=5)
+    except Exception as e:
+        logger.warning("collect failure screenshots failed: %s", e)
+        return {"attached": [], "skipped": [], "errors": [str(e)]}
+
+    for path in paths:
+        try:
+            raw = path.read_bytes()
+            stem = path.stem
+            filename = (
+                f"{stem}.png" if stem.endswith("_fail") else f"{stem}_fail.png"
+            )
+            await atlassian.attach_jira_file(
+                base_url=s["jira_base_url"],
+                username=_jira_auth_user(s),
+                token=s["jira_api_token"],
+                issue_key=issue_key,
+                filename=filename,
+                content=raw,
+                deployment=_deployment(s),
+            )
+            attached.append(filename)
+        except Exception as e:
+            logger.warning("jira attach %s failed: %s", path, e)
+            errors.append(f"{path.name}: {e}")
+
+    return {"attached": attached, "skipped": skipped, "errors": errors}
 
 
 @router.get("/status")
@@ -235,11 +277,24 @@ async def create_jira_issue(body: JiraIssueRequest):
             labels=body.labels or ["agentbrowser"],
             deployment=_deployment(s),
         )
+        attach_summary = {"attached": [], "skipped": [], "errors": []}
+        if body.session_id and result.get("key"):
+            try:
+                attach_summary = await attach_session_failure_screenshots(
+                    body.session_id, str(result["key"]), s
+                )
+            except Exception as e:
+                logger.warning("attach session failure screenshots failed: %s", e)
+                attach_summary["errors"].append(str(e))
+            result = {**result, "attachments": attach_summary}
         if body.session_id:
+            note = ""
+            if attach_summary["attached"]:
+                note = f" Attached: {', '.join(attach_summary['attached'])}."
             await db.add_message(
                 body.session_id,
                 "assistant",
-                f"Logged Jira issue **{result['key']}**: {result['url']}",
+                f"Logged Jira issue **{result['key']}**: {result['url']}{note}",
             )
             await db.add_event(
                 body.session_id,

@@ -452,7 +452,7 @@ export const ar: Record<MessageKey, string> = {
   screenshotArchiveOnFailure: 'عند الفشل فقط',
   screenshotArchiveNever: 'أبدًا',
   screenshotArchiveHelp:
-    'ستستمر المعاينة المباشرة أثناء تشغيل الوكيل. هذا يتحكم فقط في حفظ لقطات الخطوات المرقّمة في المخرجات.',
+    'ستستمر المعاينة المباشرة أثناء تشغيل الوكيل. يتحكم هذا في لقطات الخطوات في المخرجات وتقارير HTML/PDF.',
   runtimeUrl: 'رابط التشغيل',
   runtimeUrlOptional: '(تجاوز اختياري)',
   usingAppUrl: 'يُستخدم رابط التطبيق من الإعدادات لهذا التشغيل.',
@@ -497,6 +497,7 @@ export const ar: Record<MessageKey, string> = {
   issueChatHint: 'يُضاف سجل الدردشة من هذه الجلسة تلقائيًا.',
   confluenceChatHint: 'ستُنشأ صفحة بمهمة الجلسة وآخر الدردشة.',
   createJiraIssue: 'إنشاء تذكرة Jira',
+  jiraAttachFailureShotsHint: 'سيتم إرفاق لقطات خطوات الفشل عند توفرها.',
   createConfluencePage: 'إنشاء صفحة Confluence',
   creating: 'جارٍ الإنشاء…',
   created: 'تم الإنشاء:',

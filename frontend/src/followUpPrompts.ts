@@ -57,7 +57,25 @@ type Topic =
   | 'hrm'
   | 'greeting'
   | 'jira'
+  | 'qa_test'
   | 'generic'
+
+function looksLikeQaPlan(text: string): boolean {
+  const t = text || ''
+  if (/\|\s*TC\s*ID\s*\|/i.test(t)) return true
+  if (/\b(GEN|VIS|DATA|AUTH|SEC|PERF|UX|AI|AB)-\d{3}\b/i.test(t)) return true
+  if (
+    /\b(test\s*scenario|test\s*cases?|preconditions|expected\s*result|evidence\s*\/\s*notes|test\s*execution\s*report|self-?test\s*report)\b/i.test(
+      t,
+    )
+  ) {
+    return true
+  }
+  if (/\b(pass|fail|blocked)\b/i.test(t) && /\b(tc\s*id|test\s*steps|priority)\b/i.test(t)) {
+    return true
+  }
+  return false
+}
 
 /**
  * Classify from the user's ask — not from incidental words in the assistant
@@ -71,16 +89,29 @@ function detectTopic(userAsk: string, assistant: string, files: string[]): Topic
   // Only when the user explicitly asked about Jira/Confluence — never from assistant copy
   if (/\b(jira|confluence)\b/.test(u)) return 'jira'
 
+  // QA / test plans before price — "Convert to Arabic" must not become FX tips
+  if (looksLikeQaPlan(userAsk) || looksLikeQaPlan(assistant.slice(0, 2000))) return 'qa_test'
+  if (
+    /\b(html|pdf)\b/.test(u) &&
+    /\b(report|test|evidence|screenshot)\b/.test(u)
+  ) {
+    return 'qa_test'
+  }
+
   // Strong user-intent signals first
   if (/\b(news|headline|headlines|top\s*\d+\s*news|google\s*news)\b/.test(u)) return 'news'
-  if (
-    /\b(price|prices|exchange|fx|aed|inr|usd|eur|gbp|stock|ticker|quote|convert|conversion|rate)\b/.test(
+
+  const priceStrong =
+    /\b(exchange\s*rate|fx\s*rate|forex|aed\b|inr\b|usd\b|eur\b|gbp\b|stock\s*price|ticker|currency)\b/.test(
       u,
-    ) &&
-    !/\bnews\b/.test(u)
-  ) {
-    return 'price'
+    )
+  const priceWeak = /\b(price|prices|quote|convert|conversion|rate)\b/.test(u)
+  const translationOrDoc =
+    /\b(arabic|translate|translation|document|filename|localization|i18n)\b/.test(u)
+  if (priceStrong || (priceWeak && !translationOrDoc && !/\bnews\b/.test(u))) {
+    if (!/\bnews\b/.test(u)) return 'price'
   }
+
   if (/\b(login|sign\s*in|password|username|auth)\b/.test(u)) return 'login'
   if (/\b(form|fill|submit|checkbox|dropdown)\b/.test(u)) return 'form'
   if (/\b(orangehrm|hrm|employee|leave)\b/.test(u)) return 'hrm'
@@ -171,6 +202,15 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
       suggestions.push('Convert 1000 units and show the result')
       break
 
+    case 'qa_test':
+      suggestions.push('Export the AI Assistant Test Execution Report as HTML')
+      suggestions.push('Download PDF of the Test Execution Report')
+      suggestions.push('Re-run only the FAIL and BLOCKED test cases')
+      suggestions.push('Add clear Evidence / Notes for each failed case')
+      if (hasHtml) suggestions.push('Open the HTML report in Artifacts and verify the table')
+      if (hasPdf) suggestions.push('Open the PDF report and confirm section results')
+      break
+
     case 'login':
       suggestions.push('List every field on the login form')
       suggestions.push('Try logging in with the demo credentials if available')
@@ -248,6 +288,7 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
     hasSteps &&
     topic !== 'greeting' &&
     topic !== 'price' &&
+    topic !== 'qa_test' &&
     /\bconfluence\b/i.test(user)
   ) {
     suggestions.push('Post result report to Confluence')
@@ -256,7 +297,7 @@ export function suggestFollowUps(ctx: FollowUpContext): string[] {
     }
   }
 
-  if (url && topic !== 'greeting' && topic !== 'price') {
+  if (url && topic !== 'greeting' && topic !== 'price' && topic !== 'qa_test') {
     const host = url.replace(/^https?:\/\//, '').slice(0, 36)
     // Only add if we still have room — uniq will cap
     suggestions.push(`Stay on ${host} and extract any remaining key points`)

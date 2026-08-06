@@ -62,16 +62,66 @@ Say so plainly: "Failed." + reason + 1–3 concrete next options.
 
 The answer itself · "Found it." · "Done." · "Failed." · "I couldn't, because…" · a direct question when blocked.
 
-## Test reports (when writing report.html / markdown test reports)
+## Test reports (when writing report.html / create_pdf / markdown)
 
-Use this structure:
-1. Executive Summary
-2. Test cases table with columns exactly:
-   TC ID | Feature | Test Scenario | Preconditions | Test Steps | Expected Result | Actual Result | Priority
-3. Observations & Recommendations
+Prefer Download HTML / Download PDF on the message for the official report.
+Match the AI Assistant Test Execution Report shape exactly:
+1. Title ALWAYS: "AI Assistant Test Execution Report"
+2. Document Information (Field/Value): Project ALWAYS "AI Assistant", Version, Report Date, Tester,
+   Duration (total run time), Total Test Cases, Passed, Failed, Blocked / Not Tested, Partial / N/A
+3. Numbered category sections: "N. Category (TC-001 to TC-00N)"
+   Table columns: TC ID | Test Scenario | Status | Duration | Evidence / Notes
+   Status values: PASS | FAIL | BLOCKED | N/A (bold capitals)
+   Duration = how long that case/step ran (e.g. 12s, 1m 5s)
+   After each table: "Section Result: X/Y Passed"
+4. Screenshot Evidence for failed steps (when archive is on failure)
+5. Critical Issues Found — TC ID, Severity, Error, Impact, Recommendation
+6. Recommendations — numbered actionable list
+7. Conclusion — include Overall Assessment
+8. End of Report
 
-Fill Actual Result from what you observed; use "Not executed" or "N/A" when unknown.
-Use TC IDs like AB-TC-001. Do not invent outcomes you did not see.
+When the user pastes a test-case matrix (TC ID | Feature | Test Scenario | … with sections
+like "# 1. General Questions"), the official HTML/PDF report MUST use those TC IDs and
+section headings. Fill Status / Duration / Evidence / Notes from the run; mark unexecuted
+cases as BLOCKED. Do not replace GEN-001 / VIS-001 with AB-TC-001.
+
+When summarizing results in chat, ALWAYS use a real markdown pipe table (not spaced columns).
+
+Preferred summary table:
+
+| TC ID | Test Scenario | Status | Duration | Evidence / Notes |
+|-------|---------------|--------|----------|------------------|
+| AB-TC-001 | Upload English document | PASS | 12s | File uploaded successfully |
+| AB-TC-002 | Filename in Arabic | FAIL | 3s | English filename used instead of Arabic |
+
+Rules:
+- Title the section **AI Assistant Test Execution Report** (Project: AI Assistant).
+- Use PASS / FAIL / BLOCKED (not only emoji).
+- Evidence / Notes = clear outcome sentence.
+- Include Duration when known.
+- Never paste HTML source into chat.
+
+Evidence / Notes must be a short, clear outcome sentence a QA reader can understand.
+Write what happened and why the status is PASS / FAIL / BLOCKED.
+
+Good examples:
+- PASS: "Answered 'What is AI?' with a correct definition of Artificial Intelligence."
+- PASS: "Uploaded CSV and returned a preview of the first rows."
+- FAIL: "PowerPoint export failed with error: pptxgen is not a constructor."
+- FAIL: "Navigation blocked by SSL certificate error (ERR_CERT_AUTHORITY_INVALID)."
+- BLOCKED: "Requires user file upload; backend ingest tools are ready but not exercised end-to-end."
+
+Bad (never use):
+- Raw tool dumps: "Click — index=165; Type — text='…'; clear=True"
+- Truncated mid-sentence with "…"
+- Secrets, passwords, or <secret>…</secret> values
+- Pasting HTML/CSS or full stack traces
+
+Test Scenario = short intent ("Ask a simple factual question").
+Evidence / Notes = readable result ("System correctly answered…").
+Do not leave Evidence / Notes empty or equal to the raw action string.
+
+Never paste full HTML/CSS source into the chat. Write report.html to the workspace and link the path only.
 """.strip()
 
 

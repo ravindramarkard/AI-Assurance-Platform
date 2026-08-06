@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 ARCHIVE_ALWAYS = "always"
@@ -61,3 +62,45 @@ def should_archive_step_screenshot(mode: str, *, failed: bool) -> bool:
 
 def archive_decision(mode: str, *, failed: bool, has_b64: bool) -> bool:
     return bool(has_b64) and should_archive_step_screenshot(mode, failed=failed)
+
+
+def collect_failed_screenshot_files(
+    events: list[dict[str, Any]] | None,
+    session_root: Path,
+    *,
+    max_files: int = 5,
+) -> list[Path]:
+    """Return the latest failed-step screenshots, with a hard maximum of five."""
+    root = Path(session_root)
+    found: list[Path] = []
+    for ev in events or []:
+        if not isinstance(ev, dict) or ev.get("type") != "step":
+            continue
+        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        actions = payload.get("actions")
+        action_list = [str(a) for a in actions] if isinstance(actions, list) else []
+        thought = payload.get("thought")
+        thought_s = thought if isinstance(thought, str) else None
+        if not step_looks_failed(actions=action_list, thought=thought_s):
+            continue
+        rel = payload.get("screenshot")
+        if not isinstance(rel, str) or not rel.strip():
+            continue
+        clean = rel.replace("\\", "/").lstrip("/")
+        if clean == "screenshots/latest.png" or clean.endswith("/latest.png"):
+            continue
+        path = (root / clean).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            continue
+        if path.is_file() and path.suffix.lower() == ".png":
+            found.append(path)
+    if max_files is None:
+        cap = 5
+    else:
+        n = int(max_files)
+        if n <= 0:
+            return []
+        cap = min(n, 5)
+    return found[-cap:]

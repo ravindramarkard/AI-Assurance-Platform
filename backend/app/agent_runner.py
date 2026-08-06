@@ -259,6 +259,21 @@ def _extract_final_answer(history: Any) -> str | None:
 def _files_from_actions(actions: list[str], model_output: Any) -> list[str]:
     """Best-effort detect written filenames from tool calls / action summaries."""
     names: list[str] = []
+
+    def _ok_name(n: str) -> bool:
+        s = (n or "").strip()
+        if not s or "\n" in s or "\r" in s:
+            return False
+        base = Path(s).name
+        if not base or len(base) > 120:
+            return False
+        # Must look like a real file (extension), not prose with a period
+        if not re.search(r"\.[a-zA-Z0-9]{1,8}$", base):
+            return False
+        if re.search(r"\s", base):
+            return False
+        return True
+
     try:
         raw = getattr(model_output, "action", None) or getattr(model_output, "actions", None) or []
         for a in raw:
@@ -266,28 +281,29 @@ def _files_from_actions(actions: list[str], model_output: Any) -> list[str]:
             for key, val in dumped.items():
                 if not isinstance(val, dict):
                     continue
-                for fk in ("file_name", "filename", "path", "file_path", "name"):
-                    if val.get(fk):
+                for fk in ("file_name", "filename", "path", "file_path"):
+                    if val.get(fk) and _ok_name(str(val[fk])):
                         names.append(str(val[fk]))
-                # write_file / append_file style
-                if "write" in key.lower() or "file" in key.lower():
-                    for v in val.values():
-                        if isinstance(v, str) and ("." in v or "/" in v) and len(v) < 200:
-                            names.append(v)
     except Exception:
         pass
     for a in actions:
-        # e.g. "write_file: file_name='explore.ts'"
-        if "write" in a.lower() or "file" in a.lower():
-            for token in a.replace("'", " ").replace('"', " ").replace("=", " ").split():
-                if "." in token and "/" not in token[:1] and len(token) < 80:
-                    names.append(token.strip(","))
+        # e.g. "write_file: file_name='explore.ts'" — only explicit file_name/path keys
+        if not re.search(r"\b(write_file|append_file|save_as_pdf)\b", a, re.I):
+            continue
+        for m in re.finditer(
+            r"(?:file_name|filename|path|file_path)\s*=\s*('([^']+)'|\"([^\"]+)\"|([^\s,]+))",
+            a,
+            re.I,
+        ):
+            cand = m.group(2) or m.group(3) or m.group(4) or ""
+            if _ok_name(cand):
+                names.append(cand)
     # dedupe
     seen: set[str] = set()
     out: list[str] = []
     for n in names:
         base = Path(n).name
-        if base and base not in seen:
+        if base and base not in seen and _ok_name(n):
             seen.add(base)
             out.append(n)
     return out

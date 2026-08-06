@@ -428,6 +428,45 @@ async def transition_jira_issue(
     }
 
 
+async def attach_jira_file(
+    *,
+    base_url: str,
+    username: str,
+    token: str,
+    issue_key: str,
+    filename: str,
+    content: bytes,
+    deployment: Deployment = "server",
+    content_type: str = "image/png",
+) -> dict[str, Any]:
+    base = _normalize_base(base_url)
+    key = (issue_key or "").strip().upper()
+    if not key:
+        raise ValueError("Jira issue key is required")
+    if not content:
+        raise ValueError("Attachment content is empty")
+    root = _jira_api_root(base, deployment)
+    headers = _auth_headers(username, token, deployment=deployment)
+    headers.pop("Content-Type", None)
+    headers["X-Atlassian-Token"] = "no-check"
+    url = f"{root}/issue/{key}/attachments"
+    safe_name = (filename or "evidence.png").replace("/", "_")[-120:]
+    files = {"file": (safe_name, content, content_type or "image/png")}
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        resp = await client.post(url, headers=headers, files=files)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Atlassian API {resp.status_code}: {resp.text[:800]}")
+    data = resp.json() if resp.content else {}
+    first = data[0] if isinstance(data, list) and data else data
+    return {
+        "ok": True,
+        "issue_key": key,
+        "attachment_id": (first or {}).get("id") if isinstance(first, dict) else None,
+        "filename": (first or {}).get("filename") if isinstance(first, dict) else safe_name,
+        "deployment": deployment,
+    }
+
+
 async def attach_confluence_file(
     *,
     base_url: str,

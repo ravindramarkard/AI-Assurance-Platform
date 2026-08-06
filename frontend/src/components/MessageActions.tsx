@@ -12,6 +12,7 @@ import {
   type ReportMeta,
   type ReportPreviewPayload,
 } from '../messageExport'
+import { normalizeScreenshotArchiveMode } from '../qaReport'
 
 type Props = {
   content: string
@@ -70,11 +71,20 @@ export default function MessageActions({
 
   const buildMetaWithSteps = async (): Promise<ReportMeta> => {
     const user = username || (await resolveUsername())
-    const meta: ReportMeta = { ...reportMeta(), username: user }
+    let screenshotArchive: ReportMeta['screenshotArchive'] = 'on_failure'
+    try {
+      const s = await api.getSettings()
+      screenshotArchive = normalizeScreenshotArchiveMode(s.screenshot_archive, {
+        headless: Boolean(s.headless),
+      })
+    } catch {
+      /* keep default */
+    }
+    const meta: ReportMeta = { ...reportMeta(), username: user, screenshotArchive }
     if (!sessionId || !events?.length) return meta
     let steps = eventsToReportSteps(events)
     if (!steps.length) return meta
-    steps = await embedStepScreenshots(sessionId, steps, api.screenshotUrl)
+    steps = await embedStepScreenshots(sessionId, steps, api.screenshotUrl, screenshotArchive)
     return { ...meta, steps }
   }
 

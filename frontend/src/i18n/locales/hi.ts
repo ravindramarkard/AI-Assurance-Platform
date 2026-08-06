@@ -452,7 +452,7 @@ export const hi: Record<MessageKey, string> = {
   screenshotArchiveOnFailure: 'केवल विफलता पर',
   screenshotArchiveNever: 'कभी नहीं',
   screenshotArchiveHelp:
-    'एजेंट चलते समय लाइव प्रीव्यू अपडेट होता रहता है। यह केवल Artifacts में क्रमांकित स्टेप स्क्रीनशॉट सहेजने को नियंत्रित करता है।',
+    'एजेंट चलते समय लाइव प्रीव्यू अपडेट होता रहता है। यह Artifacts और HTML/PDF रिपोर्ट में स्टेप स्क्रीनशॉट नियंत्रित करता है।',
   runtimeUrl: 'रनटाइम URL',
   runtimeUrlOptional: '(वैकल्पिक ओवरराइड)',
   usingAppUrl: 'इस रन के लिए सेटिंग्स का एप्लिकेशन URL उपयोग हो रहा है।',
@@ -497,6 +497,7 @@ export const hi: Record<MessageKey, string> = {
   issueChatHint: 'इस सत्र की चैट इतिहास अपने आप जुड़ जाती है।',
   confluenceChatHint: 'सत्र के टास्क और हाल की चैट के साथ पेज बनेगा।',
   createJiraIssue: 'Jira इश्यू बनाएँ',
+  jiraAttachFailureShotsHint: 'उपलब्ध होने पर विफल स्टेप स्क्रीनशॉट संलग्न किए जाएंगे।',
   createConfluencePage: 'Confluence पेज बनाएँ',
   creating: 'बनाया जा रहा है…',
   created: 'बनाया गया:',

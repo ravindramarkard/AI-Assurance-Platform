@@ -139,6 +139,9 @@ export default function LogIssueModal({ session, onClose, onDone }: Props) {
                 />
                 <span className="text-[11px] text-slate-500 mt-1 block">{t('issueChatHint')}</span>
               </label>
+              {jiraOk && (
+                <p className="text-[11px] text-slate-500">{t('jiraAttachFailureShotsHint')}</p>
+              )}
             </>
           )}
 

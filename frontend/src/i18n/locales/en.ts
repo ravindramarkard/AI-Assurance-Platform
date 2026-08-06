@@ -453,7 +453,7 @@ export const en = {
   screenshotArchiveOnFailure: 'On failure only',
   screenshotArchiveNever: 'Never',
   screenshotArchiveHelp:
-    'Live preview still updates while the agent runs. This only controls saving numbered step screenshots into Artifacts.',
+    'Live preview still updates while the agent runs. This controls numbered step screenshots in Artifacts and in HTML/PDF test execution reports (Always / On failure only / Never).',
   runtimeUrl: 'Runtime URL',
   runtimeUrlOptional: '(optional override)',
   usingAppUrl: 'Using Application URL from Settings for this run.',
@@ -498,6 +498,7 @@ export const en = {
   issueChatHint: 'Chat history from this session is appended automatically.',
   confluenceChatHint: 'A page will be created with this session’s task and recent chat.',
   createJiraIssue: 'Create Jira issue',
+  jiraAttachFailureShotsHint: 'Failed step screenshots will be attached when available.',
   createConfluencePage: 'Create Confluence page',
   creating: 'Creating…',
   created: 'Created:',
