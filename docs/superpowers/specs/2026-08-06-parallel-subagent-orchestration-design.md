@@ -148,8 +148,8 @@ Validation rules:
 - `POST /api/sessions` (and multipart variant): optional `force_parallel: bool`
 - `GET /api/sessions/{id}`: include `parent_id`, `role`, `branch_id`, `force_parallel`, plan summary, `aggregate_report`, `child_stats` `{ total, done, failed, running, queued }`
 - `GET /api/sessions/{id}/children`: children newest-first (include retries); fields: id, title, status, branch_id, attempt, error, updated_at
-- Parent **stop**: cancel queued children + stop running children; parent → `failed` (or `stopped` if that status already exists elsewhere — use existing stop semantics and map parent to failed/stopped consistently with current `SessionControlRequest`)
-- Child **stop**: that branch counts as failed; parent continues (retry only if attempt==1 and stop was not user-initiated on parent)
+- Parent **stop**: cancel queued children + stop running children; parent uses the same terminal status as today’s single-agent stop (`SessionControlRequest` stop path)
+- Child **stop**: that branch counts as failed with no retry; parent continues remaining branches
 
 ### Events (parent WS)
 
@@ -190,7 +190,7 @@ Heuristic is intentionally cheap and conservative; false positives only cost a p
 
 ## Runtime
 
-New module `backend/app/orchestrator.py` (name flexible):
+New module `backend/app/orchestrator.py`:
 
 1. Entry from queue worker: if session should orchestrate, call orchestrator instead of (or wrapping) `agent_runner.run_session`
 2. Write `plan_json`, emit `plan_ready`, set status `planning` then `running`
@@ -220,7 +220,7 @@ Child task envelope includes: branch title/goal, truncated parent task for conte
 
 ### New Agent
 
-- Checkbox: Force parallel (disabled or no-op hint when mode is `off`? **Decision:** still allow force when mode is `off` so one-off parallel works without changing global config)
+- Checkbox: Force parallel — allowed even when global mode is `off` (one-off parallel without changing Configuration)
 
 ### Parent agent detail
 
