@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Event, type FileEntry } from '../api'
-import { contentToHtmlBody } from '../messageExport'
+import {
+  contentToHtmlBody,
+  downloadHtml,
+  printAsPdf,
+  type ReportPreviewPayload,
+} from '../messageExport'
 import { usePreferences } from '../preferences'
 import EventLogsPanel from './EventLogsPanel'
 
 type Shot = { kind: 'b64' | 'url'; value: string } | null
 
-type Tab = 'browser' | 'files' | 'logs'
+type NonReportTab = 'browser' | 'files' | 'logs'
+type Tab = NonReportTab | 'report'
 
 type Props = {
   sessionId: string | null
@@ -15,9 +21,11 @@ type Props = {
   events: Event[]
   status?: string
   tab?: Tab
-  onTabChange?: (t: Tab) => void
+  onTabChange?: (t: NonReportTab) => void
   focusFile?: string | null
   onHide?: () => void
+  reportPreview?: ReportPreviewPayload | null
+  onCloseReport?: () => void
   /** Pixel width of the panel (resizable from the parent). */
   width?: number
 }
@@ -58,13 +66,15 @@ export default function RightPanel({
   onTabChange,
   focusFile,
   onHide,
+  reportPreview = null,
+  onCloseReport,
   width = 560,
 }: Props) {
   const { t: tr } = usePreferences()
   const [internalTab, setInternalTab] = useState<Tab>('browser')
   const tab = controlledTab ?? internalTab
   const setTab = (t: Tab) => {
-    onTabChange?.(t)
+    if (t !== 'report') onTabChange?.(t)
     setInternalTab(t)
   }
 
@@ -284,6 +294,36 @@ export default function RightPanel({
             <span className="text-[11px] bg-ink-700 text-slate-300 px-1.5 rounded-full">{fileCount}</span>
           )}
         </button>
+
+        {reportPreview && (
+          <button
+            type="button"
+            onClick={() => setTab('report')}
+            className={`${tab === 'report' ? 'tab-active' : 'tab-inactive'} px-2.5 py-1.5 text-[13px] font-medium rounded-md flex items-center gap-1.5 max-w-[140px]`}
+            title={reportPreview.title}
+          >
+            <span className="text-bu-400">📑</span>
+            <span className="truncate">{tr('report')}</span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCloseReport?.()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.stopPropagation()
+                  onCloseReport?.()
+                }
+              }}
+              className="text-slate-500 hover:text-slate-200 p-0.5"
+              title="Close"
+            >
+              <IconClose />
+            </span>
+          </button>
+        )}
 
         {fileTabOpen && selected && fileName && (
           <button
@@ -582,6 +622,46 @@ export default function RightPanel({
                 </div>
               )
             )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'report' && reportPreview && (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="h-9 border-b border-line flex items-center px-3 gap-2 text-xs flex-shrink-0 bg-ink-900">
+            <span className="text-bu-400">📑</span>
+            <span className="truncate flex-1 text-slate-200 font-medium">{reportPreview.title}</span>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded border border-line text-slate-300 hover:border-bu-500/50"
+              title={tr('downloadHtml')}
+              onClick={() => downloadHtml(reportPreview.content, reportPreview.meta)}
+            >
+              {tr('downloadHtml')}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded border border-line text-slate-300 hover:border-bu-500/50"
+              title={tr('downloadPdf')}
+              onClick={() => {
+                if (!printAsPdf(reportPreview.content, reportPreview.meta)) {
+                  window.alert(
+                    'Could not open the print dialog. An HTML file was downloaded instead — open it and use Print → Save as PDF.',
+                  )
+                }
+              }}
+            >
+              {tr('downloadPdf')}
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto scroll bg-ink-900 min-h-0 flex flex-col">
+            <iframe
+              key={`${reportPreview.title}:${reportPreview.html.length}`}
+              title={reportPreview.title}
+              srcDoc={reportPreview.html}
+              className="w-full flex-1 min-h-[420px] border-0 bg-white"
+              sandbox="allow-same-origin allow-popups allow-forms"
+            />
           </div>
         </div>
       )}
