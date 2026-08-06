@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -23,6 +24,19 @@ def _public_session(session: dict) -> dict:
     raw = out.get("hitl_pending")
     if isinstance(raw, str):
         out["hitl_pending"] = db.hitl_pending_from_json(raw)
+    return out
+
+
+async def _enrich_session(session: dict) -> dict:
+    out = _public_session(session)
+    raw_plan = out.get("plan_json")
+    if raw_plan:
+        try:
+            out["plan"] = json.loads(raw_plan) if isinstance(raw_plan, str) else raw_plan
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if str(out.get("role") or "").lower() == "orchestrator" and out.get("id"):
+        out["child_stats"] = await db.child_stats(out["id"])
     return out
 
 logger = logging.getLogger(__name__)
@@ -89,12 +103,14 @@ def _task_with_attachments(task: str, session_id: str, saved: list[str]) -> str:
 
 @router.get("")
 async def list_sessions():
-    return await db.list_sessions()
+    return await db.list_sessions(include_children=False)
 
 
 @router.post("")
 async def create_session(body: CreateSessionRequest):
-    session = await db.create_session(body.task, body.model, body.llm_provider)
+    session = await db.create_session(
+        body.task, body.model, body.llm_provider, force_parallel=body.force_parallel
+    )
     session_dir(session["id"])
     runtime = (body.runtime_url or "").strip() or None
     if runtime:
@@ -144,6 +160,7 @@ async def create_session_with_files(
     model: str | None = Form(None),
     llm_provider: str | None = Form(None),
     runtime_url: str | None = Form(None),
+    force_parallel: bool = Form(False),
     files: list[UploadFile] | None = File(None),
 ):
     """Create a session and persist uploaded attachments into workspace/uploads/."""
@@ -151,7 +168,7 @@ async def create_session_with_files(
     if not task:
         raise HTTPException(400, "Task is required")
     real_files = [f for f in (files or []) if f.filename]
-    session = await db.create_session(task, model, llm_provider)
+    session = await db.create_session(task, model, llm_provider, force_parallel=force_parallel)
     sid = session["id"]
     session_dir(sid)
     saved = await _save_uploads(sid, real_files)
@@ -176,7 +193,15 @@ async def get_session(session_id: str):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    return _public_session(session)
+    return await _enrich_session(session)
+
+
+@router.get("/{session_id}/children")
+async def get_children(session_id: str):
+    if not await db.get_session(session_id):
+        raise HTTPException(404, "Session not found")
+    children = await db.list_child_sessions(session_id)
+    return [_public_session(c) for c in children]
 
 
 @router.get("/{session_id}/messages")

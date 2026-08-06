@@ -11,6 +11,7 @@ class CreateSessionRequest(BaseModel):
     llm_provider: Literal["local", "openai", "anthropic"] | None = None
     # Per-run override of Settings → Application URL
     runtime_url: str | None = None
+    force_parallel: bool = False
 
 
 class MessageRequest(BaseModel):
