@@ -238,6 +238,13 @@ async def init_db() -> None:
         await _ensure_column(db, "sessions", "llm_provider", "TEXT")
         await _ensure_column(db, "scheduled_jobs", "llm_provider", "TEXT")
         await _ensure_column(db, "sessions", "hitl_pending", "TEXT")
+        await _ensure_column(db, "sessions", "parent_id", "TEXT")
+        await _ensure_column(db, "sessions", "role", "TEXT NOT NULL DEFAULT 'root'")
+        await _ensure_column(db, "sessions", "branch_id", "TEXT")
+        await _ensure_column(db, "sessions", "plan_json", "TEXT")
+        await _ensure_column(db, "sessions", "force_parallel", "INTEGER NOT NULL DEFAULT 0")
+        await _ensure_column(db, "sessions", "aggregate_report", "TEXT")
+        await _ensure_column(db, "sessions", "attempt", "INTEGER NOT NULL DEFAULT 1")
         await db.commit()
 
 
@@ -249,7 +256,14 @@ async def _ensure_column(db: aiosqlite.Connection, table: str, column: str, decl
 
 
 async def create_session(
-    task: str, model: str | None = None, llm_provider: str | None = None
+    task: str,
+    model: str | None = None,
+    llm_provider: str | None = None,
+    force_parallel: bool = False,
+    parent_id: str | None = None,
+    role: str = "root",
+    branch_id: str | None = None,
+    attempt: int = 1,
 ) -> dict[str, Any]:
     sid = str(uuid4())
     title = task.strip().split("\n")[0][:60] or "Untitled agent"
@@ -258,10 +272,27 @@ async def create_session(
         db.row_factory = aiosqlite.Row
         await db.execute(
             """
-            INSERT INTO sessions (id, title, task, status, model, llm_provider, created_at, updated_at)
-            VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
+            INSERT INTO sessions (
+                id, title, task, status, model, llm_provider,
+                created_at, updated_at,
+                parent_id, role, branch_id, force_parallel, attempt
+            )
+            VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (sid, title, task, model, llm_provider, now, now),
+            (
+                sid,
+                title,
+                task,
+                model,
+                llm_provider,
+                now,
+                now,
+                parent_id,
+                role,
+                branch_id,
+                1 if force_parallel else 0,
+                int(attempt or 1),
+            ),
         )
         await db.execute(
             """
@@ -284,15 +315,73 @@ async def get_session(session_id: str) -> dict[str, Any] | None:
         return dict(row)
 
 
-async def list_sessions(limit: int = 100) -> list[dict[str, Any]]:
+async def list_sessions(limit: int = 100, *, include_children: bool = False) -> list[dict[str, Any]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if include_children:
+            cur = await db.execute(
+                "SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        else:
+            cur = await db.execute(
+                """
+                SELECT * FROM sessions
+                WHERE role IS NULL OR role != 'child'
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def list_child_sessions(parent_id: str) -> list[dict[str, Any]]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
-            "SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            """
+            SELECT * FROM sessions
+            WHERE parent_id = ?
+            ORDER BY created_at DESC
+            """,
+            (parent_id,),
         )
-        rows = await cur.fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def child_stats(parent_id: str) -> dict[str, int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """
+            SELECT
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+              SUM(CASE WHEN status = 'running' AND hitl_pending IS NULL THEN 1 ELSE 0 END) AS running,
+              SUM(CASE WHEN status = 'running' AND hitl_pending IS NOT NULL THEN 1 ELSE 0 END) AS waiting_for_input,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN status IN ('stopped', 'paused') THEN 1 ELSE 0 END) AS stopped
+            FROM sessions
+            WHERE parent_id = ?
+            """,
+            (parent_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return {
+                "total": 0,
+                "queued": 0,
+                "running": 0,
+                "waiting_for_input": 0,
+                "completed": 0,
+                "failed": 0,
+                "stopped": 0,
+            }
+        d = dict(row)
+        return {k: int(d.get(k) or 0) for k in ("total", "queued", "running", "waiting_for_input", "completed", "failed", "stopped")}
 
 
 async def update_session(session_id: str, **fields: Any) -> None:
