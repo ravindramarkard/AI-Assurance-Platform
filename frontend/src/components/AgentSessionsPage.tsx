@@ -1,6 +1,7 @@
 import { useMemo, useState, type MouseEvent } from 'react'
 import type { Session } from '../api'
 import { usePreferences } from '../preferences'
+import { isSessionLive, sessionStatusClass, sessionStatusLabel } from '../sessionStatus'
 
 type Props = {
   sessions: Session[]
@@ -32,14 +33,7 @@ function formatDuration(startIso: string, endIso: string, status: string): strin
   const a = Date.parse(startIso)
   const b = Date.parse(endIso)
   if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return '—'
-  const live =
-    status === 'running' ||
-    status === 'queued' ||
-    status === 'paused' ||
-    status === 'waiting_for_input' ||
-    status === 'planning' ||
-    status === 'aggregating'
-  const end = live ? Date.now() : b
+  const end = isSessionLive(status) ? Date.now() : b
   let sec = Math.max(0, Math.round((end - a) / 1000))
   if (sec < 60) return `${sec}s`
   const m = Math.floor(sec / 60)
@@ -48,58 +42,6 @@ function formatDuration(startIso: string, endIso: string, status: string): strin
   const h = Math.floor(m / 60)
   const rem = m % 60
   return rem ? `${h}h ${rem}m` : `${h}h`
-}
-
-function statusLabel(status: string, t: (k: import('../i18n/locales/en').MessageKey) => string): string {
-  switch (status) {
-    case 'completed':
-      return t('statusSucceeded')
-    case 'failed':
-      return t('statusFailed')
-    case 'partial':
-      return t('statusPartial')
-    case 'planning':
-      return t('statusPlanning')
-    case 'aggregating':
-      return t('statusAggregating')
-    case 'running':
-      return t('statusRunning')
-    case 'queued':
-      return t('statusQueued')
-    case 'paused':
-      return t('statusPaused')
-    case 'waiting_for_input':
-      return t('waitingForInput')
-    case 'stopped':
-      return t('statusStopped')
-    default:
-      return status || '—'
-  }
-}
-
-function statusClass(status: string): string {
-  switch (status) {
-    case 'completed':
-      return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-    case 'failed':
-      return 'bg-red-500/15 text-red-400 border-red-500/30'
-    case 'partial':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-    case 'planning':
-      return 'bg-slate-500/15 text-slate-300 border-slate-500/30'
-    case 'aggregating':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-    case 'running':
-      return 'bg-bu-500/15 text-bu-400 border-bu-500/30'
-    case 'queued':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-    case 'paused':
-      return 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30'
-    case 'waiting_for_input':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-    default:
-      return 'bg-slate-500/15 text-slate-400 border-slate-500/30'
-  }
 }
 
 function shortId(id: string): string {
@@ -300,9 +242,9 @@ export default function AgentSessionsPage({
                     <td className="px-3 py-3.5 align-middle">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusClass(s.status)}`}
+                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${sessionStatusClass(s.status)}`}
                         >
-                          {statusLabel(s.status, t)}
+                          {sessionStatusLabel(s.status, t)}
                         </span>
                         {onDelete && (
                           <button

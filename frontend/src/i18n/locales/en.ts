@@ -442,7 +442,9 @@ export const en = {
   maxSubagentsHelp: 'Upper bound for how many subagents a single task may spawn.',
   forceParallel: 'Force parallel',
   forceParallelHelp:
-    'Start this run with parallel subagent execution enabled (overrides the task default).',
+    'Plan and run this task with parallel subagents, even when Parallel execution is set to Off.',
+  maxAgentsHelp:
+    'Caps all live browsers (root agents + orchestrators + subagents). With 1, a new agent stays queued until the current one finishes. Raise to 2+ to run multiple agents in parallel.',
   browser: 'Browser',
   browserEngine: 'Browser engine',
   headless: 'Headless',

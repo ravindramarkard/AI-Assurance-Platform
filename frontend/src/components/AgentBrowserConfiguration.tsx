@@ -250,11 +250,7 @@ export default function AgentBrowserConfiguration({
               className="w-28 bg-ink-800 border border-line rounded-md px-3 py-2 text-sm outline-none focus:border-bu-500"
             />
           </label>
-          <p className="text-[11px] text-slate-500">
-            Caps all live browsers (root agents + orchestrators + subagents). With 1, a new agent stays{' '}
-            <span className="text-slate-400">queued</span> until the current one finishes. Raise to 2+ to
-            run multiple agents in parallel.
-          </p>
+          <p className="text-[11px] text-slate-500">{t('maxAgentsHelp')}</p>
         </div>
 
         <div className="mb-6 border-t border-line pt-5">

@@ -27,11 +27,13 @@ export type Session = {
   plan_json?: string | null
   child_stats?: {
     total: number
-    done?: number
+    queued: number
+    running: number
+    waiting_for_input?: number
+    paused?: number
     completed?: number
     failed: number
-    running: number
-    queued: number
+    stopped?: number
   }
 }
 
